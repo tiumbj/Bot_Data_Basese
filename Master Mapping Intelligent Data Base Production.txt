@@ -1,0 +1,384 @@
+Master Mapping: Intelligent Data Base → Production
+
+อิงจาก 2 แหล่งหลักที่เทียบกันแล้ว:
+
+project conversation.txt = ตัวล็อกแนวคิดและข้อกำหนดจริงของโปรเจกต์
+repo Bot_Data_Basese = implementation/spec ปัจจุบันของระบบ
+1) Project Concept หลักที่ห้ามเบี่ยง
+เป้าหมายจริง
+
+ระบบนี้ต้องเป็น central intelligence platform สำหรับ:
+
+รับผล backtest จำนวนมาก
+คัด winner strategy+logic
+เก็บ winner เข้า intelligent database
+ใช้ winner เหล่านั้นกับ realtime market scan + MT5
+มี weekly refresh/re-ranking/re-labeling
+ให้ bot trade ได้จริงเพื่อ กำไร + survivability
+ไม่ทำระบบเข้มเกินจนไม่มี signal
+Core concept ที่ล็อกแล้ว
+research core = custom, controllable backtest engine
+micro exit = base layer บังคับ
+research ต้อง cover ทุก TF ที่ล็อก
+execution TF แยกจาก research TF
+intelligent database เป็น ระบบกลาง
+bot runtime เป็น consumer/client ของข้อมูลและ policy จากระบบกลาง
+2) Master Architecture Mapping
+Layer A — Canonical Market Data Layer
+หน้าที่
+เก็บข้อมูลราคากลางชุดเดียว
+สร้างทุก timeframe จาก M1 source เดียว
+ทำให้ backtest ทุกตัวเทียบกันได้บนข้อมูลเดียวกัน
+สถานะปัจจุบัน
+
+มีแล้วใน repo:
+
+central_bot_storage_bootstrap.py
+build_multitimeframe_dataset.py
+build_parquet_tf_dataset_cache.py
+สถานะประเมิน
+พร้อมใช้งานระดับฐาน
+เป็นส่วนที่ใกล้ production ที่สุด
+Production requirement
+canonical source เดียว
+parquet cache ทุก TF
+integrity check
+duplicate/missing bar check
+versioned dataset snapshots
+Layer B — Feature / Label / Regime Intelligence Layer
+หน้าที่
+คำนวณ feature กลาง
+สร้าง regime labels
+สร้าง outcome labels
+ทำ signal outcome memory
+ทำ similar-case retrieval ในอนาคต
+สถานะปัจจุบัน
+
+มี spec และแนวทางเยอะ แต่ runtime ยังไม่ครบ:
+
+intelligent database master model ระบุ feature/label/retrieval direction ชัด
+แต่ build_base_feature_cache.py ยังว่าง
+feature store runtime ยังไม่ครบ chain
+สถานะประเมิน
+partial
+เป็นช่องว่างหลักของโปรเจกต์
+Production requirement
+feature schema กลาง
+label schema กลาง
+regime classification versioning
+weekly relabel job
+feature cache ที่ query ได้เร็ว
+Layer C — Research / Backtest Engine Layer
+หน้าที่
+รัน strategy/logic จำนวนมาก
+test ทุก TF ที่ล็อก
+test micro exit ทุก TF
+test regime behavior
+test OOS / walk-forward / robustness
+สร้าง winner และ loser evidence
+สถานะปัจจุบัน
+
+มีแล้วหลายชิ้น:
+
+locked_backtest_engine.py
+weekly_central_backtest_runner.py
+package builder ต่างๆ
+entry/micro-exit package jobs
+M30-focused analysis scripts บางส่วน
+สถานะประเมิน
+foundation พร้อม
+ยังไม่ครบ final research universe
+ช่องว่าง
+engine กลางยังไม่สะท้อน full strategy families ทั้งหมด
+weekly scope config ยังไม่ cover mandatory research TF ครบ
+บาง analysis ยังเอน M30 มากเกินไป
+Production requirement
+full cross-timeframe test matrix
+micro exit mandatory matrix
+standard metrics pack
+winner promotion rules
+reject reasons registry
+Layer D — Winner Registry / Package Registry
+หน้าที่
+เก็บว่า winner คือใคร
+อยู่ TF ไหน
+ใช้ logic อะไร
+active/inactive
+confidence/rank เท่าไร
+version ไหน approved แล้ว
+สถานะปัจจุบัน
+
+มีโครงแล้ว:
+
+central_strategy_registry
+package builders
+approved package direction ใน specs
+สถานะประเมิน
+มีฐาน
+ต้องทำให้เป็น operational registry จริง
+Production requirement
+active winner registry
+demotion/promotion logic
+weekly re-rank
+publishable approved package manifest
+Layer E — Intelligent Database Core
+หน้าที่
+
+นี่คือ “สมองกลาง” ของระบบ:
+
+รับผล backtest
+รับ feature/label
+รับ winner registry
+ให้ query แบบ realtime
+ให้ bot ขอ active packages / current regime / micro exit policy / similar cases
+รองรับ weekly learning loop
+สถานะปัจจุบัน
+
+มี spec ชัดมาก:
+
+Parquet primary storage
+DuckDB analytical query
+Qdrant similar-case retrieval
+service model กลาง
+สถานะประเมิน
+spec-strong
+runtime-incomplete
+Production requirement
+stable schema
+ingestion jobs
+query service
+health checks
+latency target
+retention/versioning policy
+access contract สำหรับ downstream bot
+Layer F — Realtime Signal Engine
+หน้าที่
+poll ตลาดทุก 2–5 วินาที
+update realtime feature
+evaluate active winners
+normalize signal
+rank signal
+dedup/conflict resolve
+ส่ง candidate เข้า AI confirm / execution gate
+สถานะปัจจุบัน
+
+ใน concept มีชัด แต่ใน repo นี้ยังไม่เห็น runtime ครบวงจร
+
+สถานะประเมิน
+concept exists
+production runtime ยังไม่ครบ
+Production requirement
+incremental feature update
+multi-strategy scan
+signal score/rank
+conflict resolution
+cooldown/exposure controls
+Layer G — MT5 Execution Layer
+หน้าที่
+รับ approved signal
+ส่งคำสั่งเข้า MT5
+track open trades
+จัดการ micro exit
+log execution กลับฐานกลาง
+สถานะปัจจุบัน
+
+แนวคิดนี้อยู่ใน project concept และต้องเป็น downstream consumer ของ intelligent database มากกว่าจะเป็นแกนของ repo นี้
+
+สถานะประเมิน
+ต้องเชื่อมต่อภายนอก repo นี้หรือสร้างเพิ่ม
+ยังไม่ใช่ส่วนที่ complete ใน repo ปัจจุบัน
+Layer H — Weekly Intelligence Loop
+หน้าที่
+เก็บผลการเทรดจริง
+relabel
+rerank winners
+demote strategy ที่เสื่อม
+promote strategy ที่ดีขึ้น
+อัปเดต approved package set
+สถานะปัจจุบัน
+
+มี direction ชัดทั้งใน conversation และ spec model
+
+สถานะประเมิน
+จำเป็น
+ยังต้องทำ orchestration ให้ครบ
+3) File-to-Architecture Mapping
+A. Data foundation
+central_bot_storage_bootstrap.py
+สร้างโครงกลางของ storage, results, registry, templates
+build_multitimeframe_dataset.py
+สร้างหลาย TF จาก source เดียว
+build_parquet_tf_dataset_cache.py
+เปลี่ยน data layer ไปสู่ Parquet/Polars cache
+B. Research engine / jobs
+locked_backtest_engine.py
+แกน engine ระดับ foundation
+weekly_central_backtest_runner.py
+ตัวรวมการรัน weekly/backtest scope
+build_locked_research_signal_package.py
+สร้าง locked signal package แรก
+build_entry_v2_component_packages.py
+สร้าง entry package family
+build_micro_exit_v2_component_packages.py
+สร้าง micro exit package family
+C. EMA research
+ema_grid_backtest_optimizer.py
+ใช้ทำ EMA research sweep ตามกติกาที่ล็อกไว้
+D. Intelligent DB spec/model
+intelligent_database_platform_master_model_v1_2_0.txt
+phase/spec files กลุ่ม intelligent database
+ใช้เป็น architecture contract ของระบบกลาง
+E. ช่องว่างชัดเจน
+build_base_feature_cache.py
+ยังว่าง → เป็น gap สำคัญของ feature layer
+4) Production Progression Checklist
+
+ใช้ checklist นี้เป็น “anti-deviation control”
+
+Phase 0 — Concept Lock
+
+ต้องยืนยันก่อนเริ่มทุกงาน:
+
+ research TF = M1,M2,M3,M4,M5,M6,M10,M15,M30,H1,H4,D1
+ execution TF แยกจาก research TF
+ micro exit = mandatory base layer
+ backtest core = custom + controllable
+ intelligent database = central system
+ เป้าหมาย = profit + survivability ไม่ใช่ zero-trade perfection
+Phase 1 — Canonical Data Ready
+ M1 source กลางตัวเดียว
+ สร้างทุก TF ครบ
+ parquet cache ครบทุก TF
+ integrity checks ผ่าน
+ dataset versioned
+Phase 2 — Feature / Label Foundation
+ base feature cache implemented
+ feature schema กลางล็อกแล้ว
+ regime labels defined
+ trade outcome labels defined
+ feature generation reproducible
+Phase 3 — Research Engine Expansion
+ weekly scope cover mandatory research TF ครบ
+ entry families cover ตาม concept
+ micro exit tested ทุก TF
+ OOS / walk-forward integrated
+ metrics pack standardized
+ reject reason logging ครบ
+Phase 4 — Winner Registry
+ strategy registry schema finalized
+ approved package manifest ใช้งานได้จริง
+ winner ranking logic กลาง finalized
+ promotion/demotion policy defined
+ versioning ครบทุก package
+Phase 5 — Intelligent Database Runtime
+ ingestion pipeline จาก backtest results เข้า DB
+ feature store query ได้เร็ว
+ label store query ได้เร็ว
+ winner registry query ได้เร็ว
+ DuckDB layer usable
+ Qdrant/similar-case retrieval usable
+ service API contract finalized
+Phase 6 — Realtime Decision Layer
+ market polling 2–5 วินาที
+ realtime feature update
+ multi-winner scan
+ signal normalization
+ conflict resolution
+ signal ranking
+ cooldown / exposure guard
+Phase 7 — MT5 Execution Integration
+ approved signal → MT5 order route
+ position tracking
+ micro exit live control
+ execution logging back to central DB
+ failure recovery / retry policy
+Phase 8 — Weekly Intelligence Loop
+ weekly relabel
+ weekly rerank
+ winner refresh
+ loser demotion
+ strategy drift report
+ weekly publish snapshot
+Phase 9 — Production Governance
+ every component versioned
+ config freeze rules defined
+ no unapproved strategy enters live set
+ no TF skipped from mandatory research
+ no metric cherry-picking
+ every promotion backed by evidence
+5) Deviation Guard Rules
+
+ใช้เป็นกฎคุม dev ทุกครั้ง
+
+ห้ามเบี่ยง 1
+
+ห้ามลดโปรเจกต์เหลือแค่ bot ยิงออเดอร์
+เพราะ concept จริงคือ central intelligence platform
+
+ห้ามเบี่ยง 2
+
+ห้ามใช้ VectorBT เป็น core production engine
+ใช้ได้เฉพาะ research/support layer เท่านั้น
+
+ห้ามเบี่ยง 3
+
+ห้ามข้าม micro exit
+เพราะนี่คือ base layer บังคับ
+
+ห้ามเบี่ยง 4
+
+ห้ามวิจัยเฉพาะ TF ที่ชอบ
+ต้อง cover TF ที่ล็อกครบ
+
+ห้ามเบี่ยง 5
+
+ห้ามเลือก winner จากกำไรอย่างเดียว
+ต้องใช้ multi-metric + robustness
+
+ห้ามเบี่ยง 6
+
+ห้ามปล่อย strategy เข้า live โดยไม่มี registry/approval
+ต้องผ่าน central winner registry ก่อน
+
+ห้ามเบี่ยง 7
+
+ห้ามให้ bot ตัดสินโดยไม่มีฐานข้อมูลกลาง
+bot ต้อง query จาก intelligent database ไม่ใช่สร้าง truth เอง
+
+ห้ามเบี่ยง 8
+
+ห้าม frozen model ยาวโดยไม่มี weekly refresh
+เพราะ concept นี้ต้องมี weekly intelligence loop
+
+6) Project Status Board
+พร้อมแล้ว
+data/storage foundation
+multi-timeframe dataset direction
+package-builder direction
+central registry direction
+intelligent DB master concept
+กำลังก่อตัว
+weekly central backtest orchestration
+entry/micro-exit package generation
+central backtest results flow
+ยังเป็น gap หลัก
+base feature cache runtime
+label/runtime intelligence layer
+DuckDB/Qdrant operational runtime
+realtime signal engine
+MT5-to-central closed feedback loop
+production-grade intelligent DB service API
+7) คำสั่งตัดสินสำหรับใช้ต่อจากนี้
+
+ใช้ประโยคนี้เป็นมาตรฐานคุมงาน:
+
+“ทุกงานต้องตอบได้ว่าเพิ่มความสมบูรณ์ของ central intelligence platform ตรง layer ไหน, ลด gap ไหน, และไม่ทำให้เบี่ยงจาก locked concept เรื่อง cross-timeframe research, micro exit base, winner registry, และ weekly intelligence loop.”
+
+สรุปสั้นที่สุด
+โปรเจกต์นี้ = central intelligent trading database/platform
+bot = consumer ไม่ใช่ศูนย์กลาง
+backtest = factory หา winner
+intelligent database = สมองกลาง
+MT5 = execution layer
+weekly loop = learning/update layer
+checklist ข้างบนใช้คุมไม่ให้ deviation from concept
