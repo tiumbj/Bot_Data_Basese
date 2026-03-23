@@ -1,0 +1,779 @@
+PROJECT MODEL: LOCAL_LLM GOLD RESEARCH STANDALONE BACKTEST + CENTRAL DATABASE
+Version: v1.0.1
+Date: 2026-03-20
+Status: RECREATED FILE
+Language: Thai + Technical Terms
+
+====================================================================
+0) PURPOSE
+====================================================================
+เอกสารนี้เป็น master project model กลางของโปรเจกต์ Local_LLM / gold_research
+สำหรับใช้เป็นมาตรฐานเดียวกันของระบบต่อไปนี้:
+
+1. Standalone backtest system
+2. Central research database
+3. Label / memory / retrieval pipeline
+4. Real-time signal/execution support for downstream bots
+5. Progression checklist
+6. Step update log template
+7. Strategy / logic record template
+
+เอกสารนี้ต้องถูกอัปเดตทุกครั้งหลังจบแต่ละขั้นตอน
+โดยเพิ่ม:
+- phase status
+- result summary
+- strategy/logic used
+- metrics
+- next action
+
+====================================================================
+1) LOCKED FOUNDATIONS FROM UPLOADED REFERENCE
+====================================================================
+1.1 Core architecture lock
+- Python ไม่ใช่ market analyst หลัก
+- Python ทำหน้าที่ data transport, feature build, storage, retrieval, schema validation, risk guard, MT5 execution
+- Local LLM ทำหน้าที่ market analyst, final confirm, exit guardian
+- Historical backtest + labels = central memory layer
+- Similar-case retrieval ต้องคัดเคสก่อนส่งเข้า LLM
+- Execution และ hard risk อยู่ฝั่ง Python/MT5 เท่านั้น
+
+1.2 Objective lock
+เป้าหมายหลักไม่ใช่แค่เพิ่ม win rate
+เป้าหมายหลักคือ:
+- ลด full SL frequency
+- ลด average loss per losing trade
+- เพิ่ม early protective exit
+- เพิ่ม scratch / small-loss exit
+- รักษา expectancy ให้บวก
+- ลดการเข้า trade ใน regime ที่เสียเปรียบ
+
+1.3 Research lock
+ทุก strategy ต้อง backtest ทุก research timeframe แบบบังคับ
+Timeframes ที่ต้องทดสอบ:
+M1, M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1
+
+1.4 Micro-exit lock
+- Micro exit เป็น base layer บังคับ
+- ต้อง backtest ทุก TF
+- ต้องวัดผลแบบ cross-timeframe
+- ห้ามข้ามการวิจัยส่วนนี้
+
+1.5 Toolchain lock
+- Python
+- Polars
+- Parquet
+- Custom Numba-based backtest engine
+- Ray สำหรับ parallel research scale-out
+- DuckDB สำหรับ analytical central DB
+- Qdrant สำหรับ similar-case retrieval
+- Optional: VectorBT-style research idea ใช้เป็น reference ได้ แต่ core engine ต้องควบคุมได้เอง
+
+1.6 Label/memory lock
+ต้องเก็บทั้งไม้ชนะและไม้แพ้
+Label ขั้นต่ำที่ต้องมี:
+- win
+- loss
+- scratch
+- fail_fast
+- early_exit_good
+- early_exit_bad
+- trend_follow_success
+- fake_breakout_fail
+- momentum_collapse
+- regime_conflict_fail
+- should_exit_early
+- fail_after_fake_breakout
+- fail_after_regime_shift
+- fail_after_momentum_collapse
+- fail_due_to_htf_conflict
+- recover_after_deep_pullback
+
+1.7 Evaluation lock
+Metrics ขั้นต่ำ:
+- net profit
+- profit factor
+- expectancy
+- max drawdown
+- average trade
+- median trade
+- win rate
+- payoff ratio
+- ulcer index
+- time in trade
+- exposure
+- trade density
+- stability across windows
+- out-of-sample robustness
+- transition damage
+- parameter plateau width
+
+Winner rule:
+- positive expectancy
+- acceptable drawdown
+- sufficient trade count
+- stable across windows
+- robust out-of-sample behavior
+- not destroyed during transitions
+- plateau stability preferred over point optimum
+
+====================================================================
+2) SYSTEM DESIGN: STANDALONE BACKTEST + CENTRAL DATABASE
+====================================================================
+2.1 Design goal
+ออกแบบให้ระบบ backtest และ database เป็น standalone research core
+ที่ downstream bot ทุกตัวสามารถเข้าถึงข้อมูลกลางได้แบบ real-time หรือ near real-time
+
+2.2 Main principles
+- Single source of truth for historical market data
+- Single source of truth for labels / memory / winners registry
+- Standardized schema across backtest, live monitor, and bot execution
+- Versioned everything: data, feature, label, schema, prompt, strategy, backtest
+- Bots ห้ามสร้าง logic ความจริงของตัวเองคนละแบบ
+- Bots ต้องอ่านจาก central outputs ที่ผ่าน research แล้ว
+
+2.3 Standalone architecture
+Layer A: Data Ingestion Layer
+- ดึง historical + incremental bars จาก MT5
+- Normalize symbol / timeframe / timestamp
+- Deduplicate data
+- Store raw and canonical data
+
+Layer B: Feature / Regime Layer
+- สร้าง features ข้าม TF
+- สร้าง regime labels
+- สร้าง structure / momentum / volatility / session states
+
+Layer C: Backtest / Replay Layer
+- run entry/exit simulations
+- run TP/SL surface research
+- run walk-forward
+- run transition damage analysis
+- run micro-exit research
+
+Layer D: Label / Memory Layer
+- สร้าง outcome labels
+- สร้าง failure pattern labels
+- สร้าง case memory units
+- สร้าง retrieval-ready snapshots
+
+Layer E: Registry / Publish Layer
+- publish winners
+- publish current approved packages
+- publish latest labels / memory / retrieval index
+- publish ready snapshot ให้ downstream bots ใช้
+
+Layer F: Bot Consumption Layer
+- bots query central DB / registry / retrieval layer
+- bots ดึง approved logic + latest statistics + similar case context
+- execution bots ใช้ Python decision engine + local LLM confirm/exit guardian
+
+2.4 Why standalone
+ข้อดี:
+- แยก research ออกจาก execution
+- ไม่ทำให้ bot จริงรับภาระ backtest หนัก
+- ทำ nightly/weekly jobs ได้คงที่
+- ทำ versioning และ rollback ง่าย
+- bot หลายตัวใช้ข้อมูลกลางเดียวกันได้
+- ง่ายต่อการพิสูจน์ว่าผลลัพธ์มาจาก strategy version ไหน
+
+====================================================================
+3) TOOLS / FRAMEWORK / LIBRARY
+====================================================================
+3.1 Required stack
+Language:
+- Python 3.x
+
+Data layer:
+- Polars
+- Parquet
+- DuckDB
+
+Research / simulation:
+- Custom Numba-based backtest engine
+- NumPy
+- optional pandas only where needed, but prefer Polars in core pipelines
+
+Parallel:
+- Ray
+
+Retrieval:
+- Qdrant
+
+Execution / broker:
+- MetaTrader5 Python package
+
+Optional helper:
+- Pydantic or strict schema validator for JSON contracts
+- FastAPI for internal local API if bots query services over HTTP
+- PyArrow for parquet interoperability
+
+3.2 Why this stack
+- Polars + Parquet เร็วสำหรับ large historical data
+- DuckDB เหมาะกับ analytics + query + central results
+- Custom Numba simulation เร็วและคุม logic ได้จริง
+- Ray ขยายการทดสอบหลาย TF / many variants พร้อมกันได้
+- Qdrant เหมาะกับ similar-case retrieval สำหรับ LLM
+- Python + MT5 เชื่อม execution ได้ตรง
+
+====================================================================
+4) STRATEGIES / LOGIC
+====================================================================
+4.1 Base logic family
+Base entry family ที่ล็อกไว้:
+- Market Structure / BOS / CHOCH
+- Pullback
+- ATR
+- ADX
+- EMA stack / EMA filters
+- Swing logic
+- Deep pullback variants
+- CHOCH confirm variants
+- EMA tight / BOS strict variants
+
+4.2 Core philosophy
+- ใช้ Price Action + Structure เป็นแกนหลัก
+- ใช้ ATR / ADX / EMA เป็น filter ไม่ใช่แกนทำนายทั้งหมด
+- ใช้ regime-aware package selection
+- 1 regime ไม่จำเป็นต้องใช้ strategy package เดียวกับอีก regime
+
+4.3 Regime playbook principle
+ตัวอย่าง:
+- Regime A = entry set A1 + micro exit M1
+- Regime B = entry set B2 + micro exit M3
+- Regime D = trend-follow set D1 + trailing logic
+- Regime F = breakout expansion set F1 + volatility stop
+
+4.4 Entry logic scope
+ต้องวิจัย logic ต่อไปนี้ให้ครบ:
+- trend continuation
+- pullback continuation
+- deep pullback
+- swing confirmation
+- breakout expansion
+- breakout failure / fake breakout
+- reversal after exhaustion
+- structure reclaim / failed reclaim
+- HTF alignment / HTF conflict
+- session-sensitive entries
+
+4.5 Exit logic scope
+ต้องวิจัยให้ครบ:
+- base exit
+- fast invalidation
+- momentum fade
+- short EMA weakness / trend weakness
+- time stop
+- trailing variants
+- volatility stop
+- structure break exit
+- partial exit
+- tighten stop
+- micro exit early kill
+
+4.6 Exit intelligence principle
+Exit ไม่ควรรอแค่ TP/SL
+ต้องประเมิน:
+- edge ยังอยู่ไหม
+- trade health เสื่อมหรือยัง
+- multi-TF alignment ยังอยู่ไหม
+- pattern เริ่มเหมือน historical failed cases หรือไม่
+- ควร hold / tighten / partial / exit_now
+
+====================================================================
+5) TIMEFRAME RESEARCH PLAN
+====================================================================
+5.1 Mandatory research timeframes
+ต้องทดสอบทุก TF ต่อไปนี้:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+5.2 Why all single timeframes are mandatory
+- เพื่อไม่เดา
+- เพื่อวัดความต่างจริง
+- เพื่อดูว่า entry/exit logic เปลี่ยนพฤติกรรมอย่างไรในแต่ละ TF
+- เพื่อหา package ที่เหมาะกับแต่ละ TF และแต่ละ regime
+- เพื่อวัดว่า micro exit ทำงานต่างกันอย่างไรใน TF เล็ก vs ใหญ่
+
+5.3 Research rule
+ห้ามสรุปว่า strategy ดี/ไม่ดี จาก TF เดียว
+ต้องมีผล cross-timeframe comparison เสมอ
+
+====================================================================
+6) STRATEGY DIVERSITY PLAN
+====================================================================
+6.1 Goal
+ใช้หลาย strategy / logic / regime / TP-SL surface / exit mode
+เพื่อครอบคลุมทุกทิศทางของการทดสอบ
+
+6.2 Diversity dimensions
+ต้องครอบคลุมอย่างน้อย:
+- trend vs range
+- breakout vs pullback
+- shallow pullback vs deep pullback
+- with HTF alignment vs HTF conflict
+- low volatility vs high volatility
+- London / NY / Asia sessions
+- continuation vs reversal
+- normal regime vs transition regime
+
+6.3 Same evaluation principle for all
+ทุก strategy ต้องถูกทดสอบด้วยหลักเดียวกัน:
+- same canonical data
+- same cost assumptions
+- same metrics
+- same walk-forward method
+- same transition analysis rule
+- same micro-exit base layer
+- same result storage structure
+
+====================================================================
+7) CENTRAL DATABASE + INTELLIGENT SYSTEM
+====================================================================
+7.1 Central data entities
+ต้องมีตาราง/โครงสร้างอย่างน้อย:
+- raw_bars
+- canonical_bars
+- feature_snapshots
+- regime_labels
+- entry_signals
+- exit_signals
+- backtest_runs
+- trade_results
+- tp_sl_surface_results
+- walkforward_results
+- transition_damage_results
+- strategy_registry
+- winners_registry
+- case_memory_units
+- llm_entry_confirm_logs
+- llm_exit_guardian_logs
+- live_orders
+- live_exits
+- monitoring_events
+
+7.2 Storage principle
+- raw / analytical large outputs เก็บใน Parquet
+- central query / joins ใช้ DuckDB
+- similarity retrieval ใช้ Qdrant
+- registries ต้อง versioned
+
+7.3 Dedup principle
+ระบบ nightly ingest ต้องกันข้อมูลซ้ำโดย:
+- unique key = symbol + timeframe + timestamp
+- checksum / latest-known timestamp check
+- append only when new bars are not already present
+- validate monotonic time order
+- reject overlapping corrupted slices
+
+7.4 Weekly backtest automation
+ทุกสัปดาห์ระบบต้อง:
+1. pull new MT5 data
+2. deduplicate
+3. update canonical bars
+4. update features
+5. run rolling / walk-forward research
+6. update labels
+7. update memory units
+8. update retrieval index
+9. publish weekly registry snapshot
+
+====================================================================
+8) FAST BACKTEST TOOL DECISION
+====================================================================
+Best-practice decision:
+- Core research engine = custom Numba-based simulator
+- Data prep = Polars + Parquet
+- Parallel = Ray
+- Storage/query = DuckDB
+- Similarity = Qdrant
+
+Reason:
+- เร็ว
+- ควบคุม logic ได้
+- scale ได้
+- เหมาะกับ exhaustive research มากกว่า bot-oriented lightweight libraries
+
+====================================================================
+9) ROBUST CENTRAL DATA PRINCIPLE
+====================================================================
+9.1 Robustness requirements
+- schema versioning
+- data validation
+- dedup
+- append-safe writes
+- retry-safe jobs
+- corruption checks
+- result reproducibility
+- package registry with exact version
+- bot-readable stable contracts
+
+9.2 Publish rule
+ข้อมูลที่ bot ใช้ได้ต้องเป็น published snapshot เท่านั้น
+ไม่ใช่ intermediate outputs ที่ยังรันไม่จบ
+
+====================================================================
+10) FIRST BOT DESIGN USING THIS DATABASE
+====================================================================
+10.1 Bot sequence
+1. First bot ดึง approved strategy / registry / labels / retrieval context จาก central system
+2. Python engine หา candidate signal จาก approved backtest logic
+3. Local LLM รับ realtime multi-TF summary + similar backtest cases
+4. Local LLM ส่ง final confirm กลับมาแบบ strict JSON
+5. Python engine ตรวจ schema + confidence + hard risk แล้วคำนวณ Entry / TP / SL / RR / lot
+6. Python ส่ง order ไป MT5
+7. Python เก็บ order context ลง DB
+8. Python monitor order ด้วย order/ticket number แบบตายตัว
+9. Micro exit monitor ทำงานถี่ระดับประมาณ 1.0 วินาทีได้ ถ้า latency และทรัพยากรรับได้
+10. Python เก็บ exit reason และ exit context ลง DB
+11. เมื่อ market ปิด ระบบ backtest / labeling / memory update ทำงานเพื่อเตรียมรอบถัดไป
+
+10.2 Order data to store
+ขั้นต่ำต้องเก็บ:
+- symbol
+- timeframe stack
+- entry time
+- entry price
+- SL
+- TP
+- RR
+- lot
+- strategy version
+- prompt version
+- label version
+- backtest version
+- confidence
+- threshold values
+- market regime
+- trend up/down
+- session
+- swing point period
+- reason codes
+- invalidators
+- live spread
+- live volatility state
+- final outcome
+- exit reason
+- MAE
+- MFE
+- time in trade
+
+====================================================================
+11) LLM ARCHITECTURE LOCK
+====================================================================
+11.1 Entry LLM
+Input:
+- realtime multi-TF summary
+- candidate setup summary
+- similar successful / failed historical cases
+
+Output JSON:
+- decision
+- direction
+- confidence
+- market_regime
+- expected_outcome_class
+- risk_of_immediate_failure
+- risk_of_stop_hunt
+- recommended_execution_mode
+- reasoning
+- invalidation_watch
+
+11.2 Exit Guardian LLM
+Input:
+- trade-state summary
+- similar failure cases
+- similar recovery cases
+- context drift summary
+
+Output JSON:
+- exit_decision
+- exit_confidence
+- trade_health
+- setup_validity
+- probability_recovery
+- probability_full_sl_if_hold
+- reasoning
+- recommended_action
+
+11.3 Hard rules
+- invalid JSON = no trade / fallback
+- schema mismatch = no trade / fallback
+- model timeout = skip entry
+- exit model timeout = hard risk fallback
+- Python must remain deterministic execution layer
+
+====================================================================
+12) NIGHTLY / WEEKLY / MONTHLY OPERATIONS
+====================================================================
+12.1 Daily / after market close
+- ingest new bars
+- deduplicate
+- update canonical data
+- update features
+- run incremental backtest
+- generate new labels
+- build case memory
+- update Qdrant index
+- validate dataset health
+- publish ready snapshot
+
+12.2 Weekly
+- rolling backtest
+- walk-forward validation
+- exit guardian evaluation
+- entry confirm evaluation
+- regime drift analysis
+- publish weekly registry
+
+12.3 Monthly or major logic change
+- full backtest
+- full comparison vs baseline
+- full robustness audit
+- re-baseline registry
+
+====================================================================
+13) PROJECT PHASES
+====================================================================
+PHASE 0: LOCK FOUNDATION
+[ ] freeze architecture
+[ ] freeze toolchain
+[ ] freeze labels
+[ ] freeze metrics
+[ ] freeze timeframe set
+[ ] freeze versioning rules
+
+PHASE 1: CENTRAL DATA CORE
+[ ] MT5 ingestion
+[ ] canonical parquet generation
+[ ] DuckDB central catalog
+[ ] dedup rules
+[ ] data validation checks
+[ ] publish-ready snapshot format
+
+PHASE 2: FEATURE + REGIME CORE
+[ ] multi-TF feature builder
+[ ] regime labeler
+[ ] threshold research from real distributions
+[ ] regime to TF mapping
+
+PHASE 3: BACKTEST CORE
+[ ] custom Numba simulator
+[ ] entry logic runners
+[ ] exit logic runners
+[ ] micro-exit runner
+[ ] TP/SL surface runner
+[ ] transition damage analyzer
+[ ] walk-forward runner
+
+PHASE 4: LABEL + MEMORY CORE
+[ ] outcome labels
+[ ] failure labels
+[ ] trade memory units
+[ ] retrieval-ready summaries
+[ ] registry of labeled cases
+
+PHASE 5: RETRIEVAL CORE
+[ ] Qdrant collection design
+[ ] embedding or feature-similarity method
+[ ] top-k retrieval validation
+[ ] metadata filters
+[ ] latency validation
+
+PHASE 6: BOT CONSUMPTION CORE
+[ ] Python decision engine
+[ ] entry LLM schema
+[ ] exit guardian schema
+[ ] hard risk fallback
+[ ] MT5 execution bridge
+[ ] monitor loop
+
+PHASE 7: CONTINUOUS OPERATIONS
+[ ] nightly scheduler
+[ ] weekly backtest scheduler
+[ ] metrics dashboard
+[ ] registry publishing
+[ ] drift alerts
+[ ] failure case review
+
+====================================================================
+14) PROGRESSION CHECKLIST
+====================================================================
+Use this section as live checklist and update after each completed step.
+
+[ ] Step A1 - Confirm architecture lock
+[ ] Step A2 - Confirm timeframe lock
+[ ] Step A3 - Confirm metrics lock
+[ ] Step A4 - Confirm label taxonomy lock
+[ ] Step A5 - Confirm toolchain lock
+
+[ ] Step B1 - Build MT5 raw ingest
+[ ] Step B2 - Build canonical parquet store
+[ ] Step B3 - Add dedup protection
+[ ] Step B4 - Add DuckDB catalog
+[ ] Step B5 - Publish stable snapshot contract
+
+[ ] Step C1 - Build multi-TF feature builder
+[ ] Step C2 - Build regime feature builder
+[ ] Step C3 - Build regime labeler
+[ ] Step C4 - Build regime threshold research
+[ ] Step C5 - Build regime TF mapping
+
+[ ] Step D1 - Build simulation engine
+[ ] Step D2 - Run entry package batch
+[ ] Step D3 - Run exit package batch
+[ ] Step D4 - Run micro-exit batch
+[ ] Step D5 - Run TP/SL surface research
+[ ] Step D6 - Run walk-forward research
+[ ] Step D7 - Run transition damage analysis
+
+[ ] Step E1 - Build label generator
+[ ] Step E2 - Build failure memory
+[ ] Step E3 - Build case memory units
+[ ] Step E4 - Build winners registry
+[ ] Step E5 - Publish approved strategy packages
+
+[ ] Step F1 - Build similarity retrieval
+[ ] Step F2 - Validate top-k case quality
+[ ] Step F3 - Build LLM entry confirm contract
+[ ] Step F4 - Build LLM exit guardian contract
+[ ] Step F5 - Build Python execution guard
+[ ] Step F6 - Connect MT5 live path
+
+[ ] Step G1 - Build nightly job
+[ ] Step G2 - Build weekly research job
+[ ] Step G3 - Build monthly baseline review
+[ ] Step G4 - Build drift validation
+[ ] Step G5 - Build monitoring / alerting
+
+====================================================================
+15) STEP UPDATE TEMPLATE
+====================================================================
+COPY THIS BLOCK EVERY TIME A STEP IS COMPLETED
+
+------------------------------------------------------------
+STEP UPDATE RECORD
+------------------------------------------------------------
+Date:
+Phase:
+Step ID:
+Title:
+Status: NOT_STARTED / IN_PROGRESS / DONE / BLOCKED
+
+Objective:
+What was built:
+Files / modules:
+Version:
+Data version:
+Feature version:
+Label version:
+Backtest version:
+Strategy version:
+Prompt version:
+Schema version:
+
+Strategy / logic used:
+Timeframes tested:
+Dataset range:
+Cost assumptions:
+Metrics result:
+- net profit:
+- profit factor:
+- expectancy:
+- max drawdown:
+- win rate:
+- average loss:
+- full SL frequency:
+- early exit saved-loss rate:
+- out-of-sample result:
+
+Result summary:
+Problems found:
+Decision:
+Next action:
+------------------------------------------------------------
+
+====================================================================
+16) STRATEGY / LOGIC RECORD TEMPLATE
+====================================================================
+COPY THIS BLOCK FOR EACH STRATEGY PACKAGE
+
+------------------------------------------------------------
+STRATEGY LOGIC RECORD
+------------------------------------------------------------
+Strategy name:
+Package version:
+Family:
+Entry type:
+Exit type:
+Micro-exit type:
+Market regime target:
+Timeframes tested:
+HTF alignment rule:
+Session rule:
+Filters used:
+- ATR:
+- ADX:
+- EMA:
+- structure:
+- volatility:
+- spread:
+Invalidation rule:
+TP/SL model:
+Sizing model:
+Walk-forward windows:
+Transition analysis result:
+Best TF(s):
+Weak TF(s):
+Failure patterns:
+Recovery patterns:
+Approved for registry: YES / NO
+Reason:
+------------------------------------------------------------
+
+====================================================================
+17) GOVERNANCE RULES
+====================================================================
+- ห้ามสรุป strategy winner จาก in-sample อย่างเดียว
+- ห้ามใช้ผลลัพธ์ที่ยังไม่ versioned
+- ห้ามให้ bot ใช้ unpublished data
+- ห้ามให้ LLM ส่งตัวเลข order โดยตรง
+- ห้าม skip micro-exit research
+- ห้าม skip all-timeframe testing
+- ห้ามเปลี่ยน labels / schema แบบไม่ bump version
+- ห้ามใช้ raw historical ทั้งก้อนส่งเข้า LLM โดยตรง
+- ต้อง retrieve top similar cases ก่อนเสมอ
+
+====================================================================
+18) FINAL SINGLE-BEST-PRACTICE CONCLUSION
+====================================================================
+แนวทางที่ถูกต้องที่สุดสำหรับโปรเจกต์นี้คือ:
+
+สร้าง central standalone research core ที่ใช้
+Polars + Parquet + DuckDB + Custom Numba Backtest + Ray + Qdrant
+
+จากนั้นบังคับให้ทุก strategy ถูกทดสอบทุก TF
+โดยมี micro exit เป็น base layer
+เก็บผลลัพธ์ทั้งหมดเป็น central labeled memory
+
+แล้วให้ bot ตัวแรกใช้ flow นี้:
+Python engine หา candidate setup
+-> ดึง realtime multi-TF summary
+-> ดึง similar backtest cases
+-> ส่งให้ local LLM ทำ final confirm / exit guardian
+-> Python ตรวจ hard risk + คำนวณ execution
+-> MT5 ส่ง order
+-> ผลลัพธ์ถูกเก็บกลับเข้าสู่ central DB เพื่อเรียนรู้รอบถัดไป
+
+เอกสารนี้ต้องถูกใช้เป็น master text กลางของโปรเจกต์
+และต้องอัปเดตทุกครั้งหลังจบแต่ละขั้นตอน
+พร้อมผลลัพธ์และ strategy/logic used

@@ -1,0 +1,21 @@
+{
+  "version": "v1.0.0",
+  "generated_at_utc": "2026-03-19T03:10:46Z",
+  "root": "C:\\Data\\Bot",
+  "weekly_timeframes": [
+    "M1",
+    "M5",
+    "M10",
+    "M15",
+    "H1",
+    "H4"
+  ],
+  "paths": {
+    "central_market_data": "C:\\Data\\Bot\\central_market_data",
+    "central_market_data_tf": "C:\\Data\\Bot\\central_market_data\\tf",
+    "central_backtest_results": "C:\\Data\\Bot\\central_backtest_results",
+    "central_strategy_registry": "C:\\Data\\Bot\\central_strategy_registry",
+    "local_llm_gold_research": "C:\\Data\\Bot\\Local_LLM\\gold_research",
+    "weekly_backtest_scope_config": "C:\\Data\\Bot\\Local_LLM\\gold_research\\configs\\weekly_backtest_scope.json"
+  }
+}

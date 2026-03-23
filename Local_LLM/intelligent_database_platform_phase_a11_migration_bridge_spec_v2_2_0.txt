@@ -1,0 +1,673 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A11 Migration Bridge Spec
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a11_migration_bridge_spec_v2_2_0.txt
+# เวอร์ชัน: v2.2.0
+# ============================================================
+
+TITLE: INTELLIGENT DATABASE PLATFORM - PHASE A11 MIGRATION BRIDGE SPEC
+VERSION: v2.2.0
+STATUS: APPROVED FOR IMPLEMENTATION PLANNING
+SCOPE: MIGRATION BRIDGE FROM CURRENT TEST/RESEARCH OUTPUTS INTO CENTRAL INTELLIGENT DATABASE PLATFORM
+
+============================================================
+1. PURPOSE
+============================================================
+
+เอกสารนี้กำหนดวิธีเชื่อมผลการทดสอบที่มีอยู่แล้วในโปรเจกต์ปัจจุบัน
+เช่น build outputs, package outputs, validation results, timeframe results, micro-exit results,
+benchmark outputs, summary logs, และ strategy notes
+ให้เข้าสู่ Intelligent Database Platform แบบไม่ต้องรื้อ pipeline เดิม
+
+หลักการสำคัญ:
+- current tests continue
+- current outputs are research assets
+- new platform absorbs and standardizes them
+- migration must be additive only
+- no disruption to current research momentum
+- no rewrite of existing build/test jobs required in phase A11
+
+LOCKED PRINCIPLE:
+Current tests continue; future platform absorbs and standardizes them, not replaces them.
+
+============================================================
+2. A11 OBJECTIVE
+============================================================
+
+A11 มีเป้าหมาย 6 ข้อ:
+
+1) รับผลลัพธ์จากงาน test/backtest ที่มีอยู่แล้วเข้า schema กลาง
+2) ทำให้ผลย้อนหลังกลายเป็น historical research asset อย่างเป็นระบบ
+3) ไม่แก้ logic หลักของ pipeline เดิม
+4) เพิ่ม traceability จาก artifact -> registry -> package candidate
+5) ทำให้ bot ในอนาคตเรียกใช้ผลวิจัยเดิมได้
+6) ปูทางสู่ weekly automatic ingestion ของผลวิจัยใหม่
+
+============================================================
+3. WHAT CURRENTLY EXISTS AND MUST BE PRESERVED
+============================================================
+
+สิ่งที่ถือว่าเป็น existing assets และห้ามทิ้ง:
+
+A. strategy build outputs
+B. entry component package outputs
+C. micro exit research outputs
+D. per-timeframe test outputs
+E. validation outputs
+F. benchmark outputs
+G. walk-forward or batch summary outputs
+H. logs ที่บอก parameter / timeframe / metrics / package name
+I. manual research notes หรือ summary text
+J. generated datasets/index files ที่ใช้เป็นหลักฐานการรัน
+
+ของพวกนี้จะถูกจัดชั้นเป็น:
+- raw research artifact
+- normalized research record
+- package candidate
+- active published package (เมื่อผ่านเกณฑ์)
+
+============================================================
+4. MIGRATION PHILOSOPHY
+============================================================
+
+A11 ใช้หลัก 4 ชั้น:
+
+LAYER 1: Preserve
+เก็บ output เดิมไว้ตามเดิม ห้ามแก้ย้อนหลังโดยไม่จำเป็น
+
+LAYER 2: Discover
+ค้นหาและทำ inventory ว่ามีไฟล์อะไรบ้าง อยู่ที่ไหน สร้างจาก job ไหน
+
+LAYER 3: Normalize
+อ่าน output เดิม แล้ว map เข้า canonical registry schema กลาง
+
+LAYER 4: Publish
+สร้าง package candidate / evidence record / intelligence summary จากข้อมูลที่ normalize แล้ว
+
+A11 ไม่ทำ:
+- rewrite build pipeline เดิม
+- เปลี่ยนชื่อไฟล์เดิมทั้งหมด
+- บังคับ schema เดิมให้เหมือนใหม่ในทันที
+- ลบผลการทดสอบเก่า
+
+============================================================
+5. HIGH-LEVEL MIGRATION ARCHITECTURE
+============================================================
+
+CURRENT RESEARCH JOBS
+    -> produce raw files / logs / summaries / package outputs
+    -> bridge scanners discover artifacts
+    -> bridge parsers extract metadata + metrics + lineage
+    -> bridge normalizers map into central schema
+    -> registry writers write append-only records
+    -> package candidate evaluator marks usable assets
+    -> publish layer exposes approved assets to bots
+
+สรุป:
+เดิมยังรันเหมือนเดิม
+ใหม่เพิ่ม "bridge layer" มารับของเดิมเข้า platform กลาง
+
+============================================================
+6. MIGRATION TARGETS
+============================================================
+
+A11 ต้องรองรับ migration target อย่างน้อย 8 กลุ่ม:
+
+1) run artifacts
+2) test metrics
+3) package definitions
+4) strategy logic metadata
+5) timeframe coverage evidence
+6) validation verdicts
+7) benchmark comparisons
+8) notes / textual rationale
+
+============================================================
+7. CENTRAL ENTITY MODEL FOR MIGRATION
+============================================================
+
+เมื่อ bridge ทำงานแล้ว ข้อมูลต้องเข้า entity กลางดังนี้:
+
+1. research_run
+เก็บว่ามีการรันอะไร เมื่อไร โดย job ไหน
+
+2. research_artifact
+เก็บไฟล์/โฟลเดอร์/ผลลัพธ์ที่สร้างจาก run
+
+3. research_metric_set
+เก็บ metric มาตรฐาน เช่น trades, win_rate, pnl, max_dd, rr, expectancy
+
+4. research_strategy_record
+เก็บชื่อ strategy family, entry logic, exit logic, filters, params, timeframe
+
+5. research_validation_record
+เก็บ pass/fail/warn และเหตุผล
+
+6. research_package_candidate
+เก็บ package ที่พร้อมเข้าสู่ ranking/publish
+
+7. research_note_record
+เก็บข้อความสรุป, ข้อสังเกต, edge case, caveat
+
+8. research_lineage_record
+เก็บความสัมพันธ์ระหว่าง source file -> parsed record -> package candidate
+
+============================================================
+8. REQUIRED MINIMUM FIELDS FOR NORMALIZATION
+============================================================
+
+ทุก artifact ที่ bridge รับเข้า ต้องพยายาม extract field ต่อไปนี้ให้ได้มากที่สุด:
+
+CORE IDENTITY
+- bridge_run_id
+- source_path
+- source_file_name
+- source_file_type
+- source_modified_utc
+- source_size_bytes
+- source_sha256
+
+RESEARCH CONTEXT
+- strategy_family
+- strategy_variant
+- entry_logic_name
+- exit_logic_name
+- micro_exit_name
+- timeframe
+- symbol
+- market
+- dataset_id
+- data_start_utc
+- data_end_utc
+
+EXECUTION CONTEXT
+- job_name
+- generator_script
+- version_tag
+- package_name
+- parameter_signature
+
+RESULT CONTEXT
+- total_trades
+- win_rate
+- profit_factor
+- expectancy
+- gross_profit
+- gross_loss
+- net_profit
+- max_drawdown
+- avg_rr
+- score_composite
+- validation_status
+
+TEXT CONTEXT
+- summary_text
+- caution_text
+- rationale_text
+
+ถ้า field ใดหาไม่ได้ ให้ลง null แต่ห้ามเดาสุ่ม
+
+============================================================
+9. MIGRATION CLASSIFICATION RULES
+============================================================
+
+ทุก artifact ต้องถูกจัดเข้าหนึ่งใน 5 คลาส:
+
+CLASS A: fully structured
+เช่น csv/json/parquet ที่ parse field ได้ชัด
+
+CLASS B: semi-structured
+เช่น txt/log ที่มี pattern parse ได้
+
+CLASS C: weakly structured
+เช่น summary text ที่ parse ได้บางส่วน
+
+CLASS D: opaque evidence
+เช่น binary output หรือ artifact ที่ยัง parse ไม่ได้ แต่เก็บเป็น evidence
+
+CLASS E: rejected
+ไฟล์เสีย / อ่านไม่ได้ / ซ้ำ / ขาดข้อมูลหลักเกิน threshold
+
+แนวปฏิบัติ:
+- A, B, C -> เข้าสู่ normalization
+- D -> เก็บเป็น evidence only
+- E -> quarantine registry
+
+============================================================
+10. MIGRATION BRIDGE MODULES
+============================================================
+
+A11 แนะนำให้มีโมดูลจริงดังนี้:
+
+1) bridge_inventory_scanner.py
+หน้าที่:
+- scan โฟลเดอร์ผลวิจัย
+- ทำ file inventory
+- จัด class เบื้องต้น
+- คำนวณ sha256
+- บันทึก discovered artifacts
+
+2) bridge_pattern_registry.py
+หน้าที่:
+- เก็บ regex / parsing rules / filename rules
+- map ชื่อ package/strategy/timeframe จาก path และ text
+
+3) bridge_artifact_parser.py
+หน้าที่:
+- parse structured/semi-structured artifacts
+- คืน normalized intermediate dict
+
+4) bridge_metric_normalizer.py
+หน้าที่:
+- map metric alias ให้เป็นชื่อมาตรฐาน
+- normalize units / percentage / currency / points
+
+5) bridge_strategy_resolver.py
+หน้าที่:
+- resolve strategy family / entry / exit / filter stack
+- สร้าง strategy fingerprint
+
+6) bridge_lineage_builder.py
+หน้าที่:
+- สร้าง relation source -> run -> metrics -> package candidate
+
+7) bridge_registry_writer.py
+หน้าที่:
+- เขียนเข้า DuckDB registry แบบ append-only + idempotent
+
+8) bridge_publish_evaluator.py
+หน้าที่:
+- จัดสถานะ candidate / baseline / rejected / publishable
+
+9) bridge_notes_ingestor.py
+หน้าที่:
+- รับ txt notes / summary reasoning / conclusions เข้า note registry
+
+10) bridge_migration_report.py
+หน้าที่:
+- สรุปว่ารับอะไรเข้าได้เท่าไร
+- ขาดอะไร
+- conflict อะไร
+- coverage เป็นอย่างไร
+
+============================================================
+11. DISCOVERY SCOPE
+============================================================
+
+A11 ต้อง scan อย่างน้อย:
+- jobs/
+- outputs/
+- reports/
+- packages/
+- validation/
+- benchmarks/
+- logs/
+- docs/notes ที่เกี่ยวข้องกับ research
+- runtime exports ที่ใช้เป็น evidence
+
+การ scan ต้องทำได้ทั้ง:
+- explicit root path
+- recursive path list
+- glob include/exclude pattern
+
+============================================================
+12. IDENTITY AND IDEMPOTENCY
+============================================================
+
+Bridge ต้อง idempotent
+
+PRIMARY RULE:
+artifact เดิมต้องไม่ถูก ingest ซ้ำเป็น record ใหม่ ถ้าเนื้อหาไฟล์เหมือนเดิม
+
+ใช้ key ดังนี้:
+artifact_identity_key =
+    sha256(source bytes)
+    + source_file_name
+    + source_size_bytes
+
+normalized_record_key =
+    source_sha256
+    + resolved_strategy_fingerprint
+    + timeframe
+    + dataset_id
+    + parameter_signature
+
+ถ้าเจอซ้ำ:
+- ไม่เขียนซ้ำ
+- อัปเดต last_seen_utc
+- เพิ่ม reference count ได้
+- เก็บใน lineage ว่าถูกพบอีกครั้งจาก scan ไหน
+
+============================================================
+13. METRIC NORMALIZATION STANDARD
+============================================================
+
+bridge_metric_normalizer ต้อง map alias ให้เหมือนกัน เช่น:
+
+winrate, win_rate, pct_win -> win_rate
+pf, profit_factor -> profit_factor
+dd, drawdown, max_dd -> max_drawdown
+net, net_pnl, total_profit -> net_profit
+trades, n_trades, total_trades -> total_trades
+rr, avg_rr, mean_rr -> avg_rr
+
+หน่วย:
+- เปอร์เซ็นต์ normalize เป็น 0-100 scale เสมอ
+- เงิน normalize ตาม base currency หรือระบุ unknown
+- points / pips ต้องมี field unit แยก
+- ห้ามรวมคนละหน่วยใน field เดียว
+
+============================================================
+14. STRATEGY FINGERPRINT STANDARD
+============================================================
+
+strategy_fingerprint ต้องสร้างจาก:
+- strategy_family
+- entry_logic_name
+- exit_logic_name
+- micro_exit_name
+- filter_stack_signature
+- parameter_signature
+
+ประโยชน์:
+- เทียบผล strategy เดียวกันข้าม run ได้
+- สร้าง ranking/publish registry ได้
+- เป็น key สำหรับ package candidate
+
+============================================================
+15. PACKAGE CANDIDATE PROMOTION RULE
+============================================================
+
+ผลวิจัยเดิมจะถูก promote เป็น package candidate เมื่อมีขั้นต่ำ:
+- strategy_family ไม่เป็น null
+- timeframe ไม่เป็น null
+- dataset_id หรือ data window ชัด
+- metrics หลักอย่างน้อย 5 ตัว
+- validation_status ระบุได้
+- source_sha256 มี
+- lineage ครบ
+
+status ที่ใช้:
+- DISCOVERED
+- PARSED
+- NORMALIZED
+- CANDIDATE
+- BASELINE
+- PUBLISHABLE
+- REJECTED
+- QUARANTINED
+
+============================================================
+16. TIMEFRAME COVERAGE EVIDENCE
+============================================================
+
+เพราะโปรเจกต์ล็อกว่าต้อง test ทุก single timeframe แบบบังคับ
+bridge ต้องสรุป coverage report เสมอ
+
+timeframes:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+bridge ต้องระบุ:
+- timeframe ไหนมี artifact แล้ว
+- timeframe ไหนมี candidate package แล้ว
+- timeframe ไหนมี validation ครบแล้ว
+- timeframe ไหนยังขาด micro exit evidence
+
+============================================================
+17. MICRO EXIT AS MANDATORY BASE LAYER
+============================================================
+
+ทุก strategy record ต้องมี flag:
+- micro_exit_required = true
+- micro_exit_present = true/false
+
+ถ้า false:
+- ห้าม promote เป็น publishable
+- อาจ promote ได้แค่ baseline candidate
+
+============================================================
+18. NOTES AND REASONING INGESTION
+============================================================
+
+ข้อสรุป/บันทึกจากมนุษย์หรือจากระบบ มีค่ามาก
+A11 จึงต้อง ingest note files ด้วย
+
+ประเภท notes:
+- strategy conclusion
+- anomaly explanation
+- validation caveat
+- market regime note
+- parameter rationale
+- follow-up recommendation
+
+เก็บ fields:
+- note_type
+- related_strategy_fingerprint
+- related_run_id
+- authored_by
+- created_utc
+- note_text
+- confidence_level
+
+============================================================
+19. MIGRATION QUALITY LEVELS
+============================================================
+
+ทุก bridge batch ต้องให้คะแนนคุณภาพ:
+
+LEVEL 1
+เก็บได้แค่ artifact inventory
+
+LEVEL 2
+parse metadata ได้บางส่วน
+
+LEVEL 3
+parse metrics มาตรฐานได้
+
+LEVEL 4
+สร้าง strategy fingerprint + lineage ได้
+
+LEVEL 5
+พร้อม promote เป็น candidate/publishable
+
+เป้าของ A11 คือให้ผลเดิมจำนวนมากที่สุดขึ้นสู่ LEVEL 3-4 ก่อน
+ไม่จำเป็นต้องบังคับทุกอย่างเป็น LEVEL 5 ทันที
+
+============================================================
+20. MIGRATION REPORT OUTPUT
+============================================================
+
+ทุกครั้งที่รัน bridge ต้องสร้าง report อย่างน้อย 4 ชนิด:
+
+1) inventory report
+2) normalization report
+3) coverage report
+4) promotion report
+
+field สำคัญ:
+- scanned_files
+- parsed_files
+- normalized_records
+- duplicate_artifacts
+- rejected_artifacts
+- candidate_packages_created
+- publishable_packages_created
+- timeframe_coverage_pct
+- missing_micro_exit_count
+
+============================================================
+21. PRODUCTION-SAFE RULES
+============================================================
+
+A11 ต้องไม่กระทบ production research flow
+
+RULES:
+- bridge รันแบบ read-only ต่อ source artifacts
+- ห้ามแก้ไฟล์ source เดิม
+- ห้าม rename source เดิมอัตโนมัติ
+- ห้ามลบ source เดิม
+- เขียนเฉพาะ registry / report / publish side ใหม่
+- ทุก error ต้องตกไป quarantine report ไม่ใช่หยุดทั้ง batch
+- bridge ต้อง restart-safe
+
+============================================================
+22. RECOMMENDED FOLDER EXTENSION
+============================================================
+
+เพิ่มโครงนี้เข้า platform:
+
+platform/
+  migration_bridge/
+    __init__.py
+    bridge_inventory_scanner.py
+    bridge_pattern_registry.py
+    bridge_artifact_parser.py
+    bridge_metric_normalizer.py
+    bridge_strategy_resolver.py
+    bridge_lineage_builder.py
+    bridge_registry_writer.py
+    bridge_publish_evaluator.py
+    bridge_notes_ingestor.py
+    bridge_migration_report.py
+
+  configs/
+    bridge_patterns/
+    bridge_aliases/
+    bridge_thresholds/
+
+  reports/
+    migration/
+
+============================================================
+23. RECOMMENDED BUILD ORDER
+============================================================
+
+A11.1  inventory scanner
+A11.2  alias/pattern registry
+A11.3  artifact parser
+A11.4  metric normalizer
+A11.5  strategy resolver
+A11.6  registry writer
+A11.7  migration report generator
+A11.8  package candidate promotion
+A11.9  notes ingestion
+A11.10 weekly bridge automation
+
+============================================================
+24. WEEKLY AUTOMATION POLICY
+============================================================
+
+เมื่อระบบ weekly run ทำงาน ต้องมี bridge step ด้วย
+
+weekly order:
+1. ingest latest MT5 data
+2. normalize canonical bars
+3. run research jobs
+4. discover new research artifacts
+5. bridge normalize artifacts
+6. update registry
+7. update package candidates
+8. update publishable packages
+9. update intelligence snapshot
+10. update project progression text
+
+============================================================
+25. PROGRESSION CHECKLIST
+============================================================
+
+[ ] A11.1 กำหนด root paths ของ artifact discovery
+[ ] A11.2 นิยาม artifact classes A/B/C/D/E
+[ ] A11.3 นิยาม sha256 identity rules
+[ ] A11.4 นิยาม metric alias mapping table
+[ ] A11.5 นิยาม strategy fingerprint rules
+[ ] A11.6 นิยาม registry write contract
+[ ] A11.7 นิยาม candidate promotion criteria
+[ ] A11.8 นิยาม timeframe coverage report
+[ ] A11.9 นิยาม micro exit evidence rule
+[ ] A11.10 นิยาม notes ingestion contract
+[ ] A11.11 นิยาม weekly bridge insertion point
+[ ] A11.12 นิยาม migration report standard
+
+============================================================
+26. STEP UPDATE TEMPLATE
+============================================================
+
+STEP UPDATE
+PHASE: A11
+STEP: <A11.x>
+DATE_UTC: <...>
+STATUS: <NOT_STARTED | IN_PROGRESS | BLOCKED | DONE>
+
+INPUTS
+- paths scanned:
+- jobs referenced:
+- artifact classes targeted:
+
+WORK COMPLETED
+- ...
+
+RESULT
+- scanned_files:
+- parsed_files:
+- normalized_records:
+- duplicates:
+- candidates_created:
+- publishable_created:
+
+ISSUES
+- ...
+
+DECISION
+- ...
+
+NEXT STEP
+- ...
+
+============================================================
+27. STRATEGY / LOGIC RECORD TEMPLATE
+============================================================
+
+STRATEGY LOGIC RECORD
+record_version: v1
+strategy_family:
+strategy_variant:
+entry_logic_name:
+exit_logic_name:
+micro_exit_name:
+filter_stack:
+parameter_signature:
+timeframe:
+dataset_id:
+data_window:
+metrics:
+validation_status:
+promotion_status:
+source_artifact_paths:
+source_sha256_list:
+notes:
+next_action:
+
+============================================================
+28. FINAL DECISION OF A11
+============================================================
+
+A11 solidifies the bridge between present research reality and future central intelligence architecture.
+
+Final locked decision:
+- existing tests continue
+- existing outputs are preserved
+- migration is additive only
+- bridge normalizes old and new results into one central platform
+- no major rewrite is needed to gain value from current testing work
+
+END OF DOCUMENT

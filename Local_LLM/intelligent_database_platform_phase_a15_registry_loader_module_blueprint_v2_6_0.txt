@@ -1,0 +1,749 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform - Phase A15 Registry Loader Module Implementation Blueprint
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a15_registry_loader_module_blueprint_v2_6_0.txt
+# เวอร์ชัน: v2.6.0
+# ============================================================
+
+TITLE: Intelligent Database Platform - Phase A15 Registry Loader Module Implementation Blueprint
+VERSION: v2.6.0
+STATUS: SOLID IMPLEMENTATION BLUEPRINT
+SCOPE: REGISTRY YAML LOADER / VALIDATOR / ACTIVATION / RELOAD / SERVICE FACADE
+
+============================================================
+1. PURPOSE
+============================================================
+
+เอกสารนี้แปลง A14 จากระดับ policy/spec ไปสู่ระดับ implementation blueprint แบบพร้อมเขียนโค้ดจริง
+โดยกำหนด module, class, function, input/output contract, state transition, logging, failure model,
+test scope, และ build order ของ registry loader subsystem
+
+เป้าหมาย:
+1. โหลด YAML registry bundle แบบปลอดภัย
+2. validate schema และ cross-registry consistency
+3. สร้าง immutable snapshot
+4. activate แบบ atomic
+5. รองรับ hot-reload แบบ bundle-level only
+6. rollback ได้ทันทีเมื่อ activation fail
+7. ให้ bot เข้าถึงผ่าน service layer เท่านั้น
+8. ไม่ให้ parser/business logic กระจัดกระจายหลายจุด
+
+============================================================
+2. POSITION IN OVERALL ARCHITECTURE
+============================================================
+
+Registry Loader Subsystem อยู่ใน Intelligent Database Platform ฝั่ง control/config plane
+
+บทบาท:
+- อ่าน bridge registry bundle
+- ตรวจ schema + checksum + dependency
+- แปลง registry ให้เป็น normalized runtime objects
+- สร้าง active snapshot
+- ให้ service layer query registry runtime state
+- ส่ง signal ให้ bridge parser / migration layer ใช้ bundle เดียวกัน
+
+ห้าม subsystem นี้:
+- parse artifact payload จริง
+- query backtest metrics จริง
+- เขียนเข้าฐานผลวิจัยโดยตรง
+- เปิดให้ bot อ่าน YAML file path ตรง
+
+============================================================
+3. TARGET MODULES
+============================================================
+
+3.1 MODULE LIST
+
+1. core/registry/yaml_models.py
+2. core/registry/yaml_validator.py
+3. core/registry/yaml_loader.py
+4. core/registry/activation.py
+5. core/registry/reload_manager.py
+6. core/registry/registry_service.py
+7. core/registry/snapshot_store.py
+8. core/registry/checksum.py
+9. core/registry/errors.py
+10. core/registry/types.py
+
+3.2 SUPPORT MODULES
+
+1. core/config/settings.py
+2. core/logging/logging_config.py
+3. core/utils/time_utils.py
+4. core/utils/hash_utils.py
+5. core/utils/io_utils.py
+
+============================================================
+4. MODULE RESPONSIBILITY MAP
+============================================================
+
+4.1 yaml_models.py
+หน้าที่:
+- นิยาม Pydantic models สำหรับทุก YAML registry
+- นิยาม normalized runtime DTOs
+- นิยาม strict field typing
+- นิยาม enum/constants ที่เกี่ยวกับ registry bundle
+
+ผลลัพธ์:
+- source-of-truth ของ runtime schema contract
+
+4.2 yaml_validator.py
+หน้าที่:
+- validate individual YAML files
+- validate manifest-first load order
+- validate cross-registry consistency
+- validate required keys / alias uniqueness / pattern priority / references
+
+ผลลัพธ์:
+- ValidationReport
+- ValidationError list
+- fail-fast decision
+
+4.3 yaml_loader.py
+หน้าที่:
+- อ่านไฟล์ YAML จาก disk
+- parse -> model validation
+- normalize เป็น runtime objects
+- สร้าง RegistryBundleStaging object
+
+ผลลัพธ์:
+- staged bundle ที่ยังไม่ active
+
+4.4 activation.py
+หน้าที่:
+- สร้าง immutable bundle snapshot
+- activate pointer แบบ atomic
+- handle activation transaction
+- keep previous snapshot for rollback
+
+ผลลัพธ์:
+- ActiveRegistrySnapshot
+- activation metadata
+
+4.5 reload_manager.py
+หน้าที่:
+- trigger full bundle reload
+- debounce reload requests
+- lock concurrency
+- decide reload / reject / rollback
+- emit reload events
+
+ผลลัพธ์:
+- predictable reload lifecycle
+
+4.6 registry_service.py
+หน้าที่:
+- เป็น façade ให้ส่วนอื่นเรียก registry
+- expose read methods
+- expose metadata/status methods
+- ห้าม expose raw YAML internals
+
+ผลลัพธ์:
+- stable access plane สำหรับ parser/services/API/SDK
+
+4.7 snapshot_store.py
+หน้าที่:
+- เก็บ active snapshot และ previous snapshot ใน memory
+- provide thread-safe pointer swap
+- provide version/created_at/checksum lookup
+
+ผลลัพธ์:
+- single runtime source of truth
+
+4.8 checksum.py
+หน้าที่:
+- คำนวณ SHA-256 รายไฟล์
+- คำนวณ bundle digest
+- compare checksum กับ manifest
+
+ผลลัพธ์:
+- integrity verification
+
+4.9 errors.py
+หน้าที่:
+- นิยาม exception hierarchy
+- map reason codes
+- รองรับ structured logging
+
+4.10 types.py
+หน้าที่:
+- นิยาม shared type aliases / dataclasses / enums ที่ lightweight
+- ลด circular import
+
+============================================================
+5. DIRECTORY STRUCTURE
+============================================================
+
+gold_research/
+  intelligent_db_platform/
+    core/
+      registry/
+        yaml_models.py
+        yaml_validator.py
+        yaml_loader.py
+        activation.py
+        reload_manager.py
+        registry_service.py
+        snapshot_store.py
+        checksum.py
+        errors.py
+        types.py
+    configs/
+      bridge_registry_manifest.yaml
+      bridge_file_patterns.yaml
+      metric_alias_registry.yaml
+      strategy_alias_registry.yaml
+      timeframe_registry.yaml
+      artifact_type_registry.yaml
+    runtime/
+      registry/
+        active/
+        staging/
+        archive/
+        logs/
+
+============================================================
+6. DATA OBJECTS TO IMPLEMENT
+============================================================
+
+6.1 SOURCE MODELS (Pydantic)
+
+- ManifestModel
+- FilePatternRegistryModel
+- MetricAliasRegistryModel
+- StrategyAliasRegistryModel
+- TimeframeRegistryModel
+- ArtifactTypeRegistryModel
+
+6.2 NORMALIZED RUNTIME OBJECTS
+
+- RegistryBundleSource
+- RegistryBundleStaging
+- RegistryBundleSnapshot
+- ActiveRegistryPointer
+- ValidationReport
+- CrossRegistryValidationReport
+- ActivationResult
+- ReloadResult
+- RegistryStatusView
+
+6.3 SMALL SUPPORT OBJECTS
+
+- FileChecksumRecord
+- BundleChecksumRecord
+- AliasResolutionRule
+- PatternRule
+- ArtifactTypeRule
+- TimeframeRule
+
+============================================================
+7. EXCEPTION HIERARCHY
+============================================================
+
+Base:
+- RegistryError
+
+Schema / file:
+- RegistryFileNotFoundError
+- RegistryManifestError
+- RegistryYamlParseError
+- RegistrySchemaValidationError
+- RegistryChecksumMismatchError
+
+Cross-registry:
+- RegistryAliasConflictError
+- RegistryUnknownReferenceError
+- RegistryPriorityConflictError
+- RegistryDuplicateIdError
+
+Activation / runtime:
+- RegistryActivationError
+- RegistryRollbackError
+- RegistrySnapshotNotFoundError
+- RegistryReloadInProgressError
+- RegistryServiceUnavailableError
+
+Policy:
+- RegistryPartialReloadNotAllowedError
+- RegistryUnsafeHotReloadError
+
+ทุก exception ต้องมี:
+- error_code
+- human_message
+- technical_message
+- registry_name
+- file_path
+- bundle_version
+- details_json
+
+============================================================
+8. FUNCTION-BY-FUNCTION BLUEPRINT
+============================================================
+
+8.1 yaml_models.py
+
+Function/Class:
+1. class ManifestModel(BaseModel)
+   Purpose:
+   - validate manifest fields เช่น bundle_version, registry_files, checksums, load_order, required_registries
+
+2. class FilePatternRegistryModel(BaseModel)
+   Purpose:
+   - validate list ของ file pattern definitions
+
+3. class MetricAliasRegistryModel(BaseModel)
+   Purpose:
+   - validate metric alias definitions และ canonical metric mapping
+
+4. class StrategyAliasRegistryModel(BaseModel)
+   Purpose:
+   - validate strategy alias definitions และ canonical strategy mapping
+
+5. class TimeframeRegistryModel(BaseModel)
+   Purpose:
+   - validate timeframe alias / canonical timeframe / ordering
+
+6. class ArtifactTypeRegistryModel(BaseModel)
+   Purpose:
+   - validate artifact type classification rules
+
+7. def build_runtime_bundle(...)
+   Input:
+   - validated source models
+   Output:
+   - RegistryBundleSource
+   Purpose:
+   - รวม models เป็น object กลางก่อน staging
+
+8.2 checksum.py
+
+1. def compute_sha256_file(file_path: Path) -> str
+   Purpose:
+   - hash ไฟล์เดี่ยว
+
+2. def compute_bundle_digest(file_checksums: dict[str, str]) -> str
+   Purpose:
+   - hash ทั้ง bundle ตาม deterministic order
+
+3. def verify_manifest_checksums(manifest, actual_checksums) -> list[RegistryError]
+   Purpose:
+   - เปรียบเทียบ checksum ตาม manifest
+
+8.3 yaml_loader.py
+
+1. def load_manifest(manifest_path: Path) -> ManifestModel
+   Purpose:
+   - อ่าน manifest ก่อนทุกครั้ง
+
+2. def load_yaml_file(file_path: Path) -> dict
+   Purpose:
+   - parse YAML raw content
+   Rule:
+   - ห้าม return None silently
+
+3. def load_registry_models(config_dir: Path, manifest: ManifestModel) -> dict[str, object]
+   Purpose:
+   - โหลด registries ตาม load_order
+
+4. def stage_registry_bundle(config_dir: Path) -> RegistryBundleStaging
+   Steps:
+   - load manifest
+   - load raw yaml
+   - validate source models
+   - compute checksums
+   - build source bundle
+   - attach staging metadata
+
+8.4 yaml_validator.py
+
+1. def validate_manifest_structure(manifest: ManifestModel) -> ValidationReport
+2. def validate_required_registries(manifest: ManifestModel, loaded: dict) -> ValidationReport
+3. def validate_unique_ids(loaded: dict) -> ValidationReport
+4. def validate_pattern_priorities(file_patterns_model) -> ValidationReport
+5. def validate_metric_alias_collisions(metric_alias_model) -> ValidationReport
+6. def validate_strategy_alias_collisions(strategy_alias_model) -> ValidationReport
+7. def validate_timeframe_consistency(timeframe_model) -> ValidationReport
+8. def validate_artifact_type_rules(artifact_type_model) -> ValidationReport
+9. def validate_cross_registry_references(loaded: dict) -> CrossRegistryValidationReport
+10. def validate_bundle_staging(staging: RegistryBundleStaging) -> ValidationReport
+
+Policy:
+- return structured report
+- ถ้า severity >= FAIL ต้อง block activation
+- QUARANTINE ใช้กับ artifact ingestion ไม่ใช่ registry loading
+- registry loading ใช้ PASS/WARN/FAIL เท่านั้น
+
+8.5 snapshot_store.py
+
+1. class SnapshotStore
+   Internal state:
+   - _active_snapshot
+   - _previous_snapshot
+   - _lock
+   - _history_ring
+
+2. def get_active_snapshot() -> RegistryBundleSnapshot
+3. def get_previous_snapshot() -> RegistryBundleSnapshot | None
+4. def swap_active_snapshot(new_snapshot) -> None
+5. def archive_previous_snapshot() -> None
+6. def get_snapshot_status() -> RegistryStatusView
+
+Rule:
+- ต้อง thread-safe
+- pointer swap ต้อง atomic ภายใน process
+
+8.6 activation.py
+
+1. def build_immutable_snapshot(staging: RegistryBundleStaging) -> RegistryBundleSnapshot
+   Purpose:
+   - freeze runtime objects
+   - attach activation metadata
+
+2. def activate_snapshot(snapshot_store: SnapshotStore, new_snapshot: RegistryBundleSnapshot) -> ActivationResult
+   Steps:
+   - lock
+   - store current as previous
+   - swap pointer
+   - emit activation log
+   - return activation result
+
+3. def rollback_to_previous_snapshot(snapshot_store: SnapshotStore) -> ActivationResult
+   Purpose:
+   - rollback เมื่อ activation verification fail
+
+4. def verify_post_activation(snapshot_store: SnapshotStore) -> ValidationReport
+   Purpose:
+   - sanity check หลัง activate
+
+8.7 reload_manager.py
+
+1. class ReloadManager
+   Internal state:
+   - _reload_lock
+   - _last_reload_at
+   - _reload_in_progress
+   - _cooldown_seconds
+
+2. def reload_bundle(config_dir: Path, reason: str) -> ReloadResult
+   Steps:
+   - acquire reload lock
+   - reject partial reload
+   - stage bundle
+   - validate bundle
+   - build snapshot
+   - activate snapshot
+   - run post-activation checks
+   - rollback if needed
+   - release lock
+
+3. def can_reload_now() -> bool
+4. def mark_reload_started()
+5. def mark_reload_finished()
+6. def get_reload_status() -> dict
+
+Rule:
+- ห้าม concurrent reload
+- ห้าม partial registry reload
+- ถ้า validate fail ต้อง keep active snapshot เดิม
+
+8.8 registry_service.py
+
+1. class RegistryService
+   Dependencies:
+   - SnapshotStore
+   - ReloadManager
+
+2. def get_active_bundle_version() -> str
+3. def get_registry_status() -> RegistryStatusView
+4. def list_file_patterns() -> list[PatternRule]
+5. def resolve_metric_alias(metric_name: str) -> str | None
+6. def resolve_strategy_alias(strategy_name: str) -> str | None
+7. def resolve_timeframe_alias(tf_name: str) -> str | None
+8. def classify_artifact_type(path_or_name: str) -> str | None
+9. def find_matching_patterns(path_or_name: str) -> list[PatternRule]
+10. def trigger_reload(reason: str) -> ReloadResult
+
+Rule:
+- service method ต้องอ่านจาก active snapshot เท่านั้น
+- ห้ามแตะ disk โดยตรงใน read path
+- read path ต้อง fast, pure, deterministic
+
+============================================================
+9. STATE TRANSITION MODEL
+============================================================
+
+STATE 1: NO_ACTIVE_SNAPSHOT
+STATE 2: ACTIVE_READY
+STATE 3: RELOAD_STAGING
+STATE 4: RELOAD_VALIDATING
+STATE 5: RELOAD_ACTIVATING
+STATE 6: ACTIVE_READY_NEW
+STATE 7: ROLLBACK_TO_PREVIOUS
+STATE 8: ACTIVE_READY_PREVIOUS
+
+Allowed path:
+NO_ACTIVE_SNAPSHOT -> ACTIVE_READY
+ACTIVE_READY -> RELOAD_STAGING -> RELOAD_VALIDATING -> RELOAD_ACTIVATING -> ACTIVE_READY_NEW
+ACTIVE_READY -> RELOAD_STAGING -> RELOAD_VALIDATING -> FAIL -> ACTIVE_READY
+ACTIVE_READY -> RELOAD_STAGING -> RELOAD_VALIDATING -> RELOAD_ACTIVATING -> POST_CHECK_FAIL -> ROLLBACK_TO_PREVIOUS
+
+Forbidden:
+- ACTIVE_READY -> partial_file_reload
+- ACTIVE_READY -> mutate_active_snapshot_in_place
+- RELOAD_VALIDATING -> activate_on_warn_if_manifest_invalid
+
+============================================================
+10. LOGGING AND OBSERVABILITY RULES
+============================================================
+
+ต้อง log แบบ structured JSON ทุกขั้น:
+- event
+- ts_utc
+- bundle_version
+- config_dir
+- active_bundle_digest
+- staging_bundle_digest
+- reason
+- status
+- error_code
+- duration_ms
+
+Events:
+- REGISTRY_MANIFEST_LOAD_STARTED
+- REGISTRY_MANIFEST_LOAD_OK
+- REGISTRY_FILE_LOAD_OK
+- REGISTRY_SCHEMA_VALIDATION_OK
+- REGISTRY_SCHEMA_VALIDATION_FAIL
+- REGISTRY_CROSS_VALIDATION_OK
+- REGISTRY_CHECKSUM_FAIL
+- REGISTRY_ACTIVATION_STARTED
+- REGISTRY_ACTIVATION_OK
+- REGISTRY_POST_ACTIVATION_FAIL
+- REGISTRY_ROLLBACK_OK
+- REGISTRY_RELOAD_REJECTED
+
+Metrics:
+- reload_attempt_total
+- reload_success_total
+- reload_fail_total
+- rollback_total
+- active_snapshot_age_seconds
+- active_bundle_registry_count
+
+============================================================
+11. THREAD-SAFETY AND CONCURRENCY RULES
+============================================================
+
+1. read path ต้อง lock-free เท่าที่ทำได้ โดยอาศัย immutable active snapshot
+2. write/reload path ใช้ exclusive lock
+3. activation ใช้ pointer swap ครั้งเดียว
+4. ห้าม mutate object ภายใน active snapshot หลัง activate
+5. bot/API read พร้อมกันได้โดยไม่ block reload ยาวเกินจำเป็น
+6. post-activation check ต้องไม่ถือ lock นานเกินจำเป็น
+
+============================================================
+12. PERFORMANCE RULES
+============================================================
+
+1. active reads ต้องอ่านจาก memory เท่านั้น
+2. YAML parse มีเฉพาะตอน reload/init
+3. checksum ใช้เฉพาะ file set ใน manifest
+4. cross-registry validation ต้องเป็น O(n) หรือ O(n log n) เป็นหลัก
+5. ห้าม scan โฟลเดอร์ config ทั้งหมดแบบ loose ถ้า manifest ระบุไฟล์แล้ว
+6. hot path ของ parser ห้ามสร้าง model จาก YAML ใหม่ทุกครั้ง
+
+============================================================
+13. SECURITY / SAFETY RULES
+============================================================
+
+1. bot ไม่มีสิทธิ์เห็น raw YAML path
+2. bot ไม่มีสิทธิ์ trigger unsafe partial reload
+3. operator-triggered reload ต้องมี audit reason
+4. invalid bundle ต้องไม่แทน active bundle เดิม
+5. checksum mismatch ต้อง fail-fast
+6. manifest missing required registry ต้อง fail-fast
+7. cross-registry ambiguity ต้อง fail-fast
+
+============================================================
+14. INIT FLOW
+============================================================
+
+ตอน platform startup:
+
+STEP 1: locate config dir
+STEP 2: load manifest
+STEP 3: load YAML registries
+STEP 4: schema validate
+STEP 5: checksum verify
+STEP 6: cross-registry validate
+STEP 7: build source bundle
+STEP 8: build immutable snapshot
+STEP 9: activate snapshot
+STEP 10: run post-activation sanity
+STEP 11: expose registry service
+STEP 12: mark registry subsystem ready
+
+ถ้า fail:
+- startup fail-fast
+- platform ไม่ควรเปิด bridge ingestion ถ้า registry ยังไม่ ready
+
+============================================================
+15. RELOAD FLOW
+============================================================
+
+STEP 1: receive reload request
+STEP 2: acquire reload lock
+STEP 3: verify cooldown / no concurrent reload
+STEP 4: load manifest + YAML
+STEP 5: validate + checksum + cross-check
+STEP 6: build staging bundle
+STEP 7: build immutable snapshot
+STEP 8: activate atomically
+STEP 9: run post-activation checks
+STEP 10: if fail -> rollback
+STEP 11: release lock
+STEP 12: emit reload result
+
+============================================================
+16. TEST BLUEPRINT
+============================================================
+
+16.1 UNIT TESTS
+
+yaml_models.py:
+- valid manifest accepted
+- missing required field rejected
+- duplicate IDs rejected by validator, not silently overwritten
+
+checksum.py:
+- sha256 deterministic
+- bundle digest deterministic regardless of load order input if normalized
+
+yaml_loader.py:
+- invalid yaml raises parse error
+- manifest-first loading enforced
+- missing registry file fails
+
+yaml_validator.py:
+- unique IDs pass
+- alias collision fail
+- missing canonical reference fail
+- priority duplication fail
+- unknown timeframe alias fail
+
+activation.py:
+- snapshot immutable after build
+- activate swaps pointer
+- rollback restores previous snapshot
+
+reload_manager.py:
+- concurrent reload rejected
+- failed validate keeps old snapshot
+- post-check fail triggers rollback
+
+registry_service.py:
+- read methods use active snapshot
+- no disk access in read path
+- returns canonical values consistently
+
+16.2 INTEGRATION TESTS
+
+- startup with valid bundle
+- startup with checksum mismatch
+- hot reload valid new bundle
+- hot reload invalid new bundle
+- post-activation fail then rollback
+- parser receives updated pattern set after successful reload
+- API/SDK reads consistent before/after reload
+
+16.3 REGRESSION TESTS
+
+- legacy pattern aliases still resolve
+- metric alias normalization unchanged for approved old cases
+- strategy alias mapping stable across bundle versions unless explicit migration note exists
+
+============================================================
+17. BUILD ORDER
+============================================================
+
+A15.1 errors.py
+A15.2 types.py
+A15.3 yaml_models.py
+A15.4 checksum.py
+A15.5 yaml_loader.py
+A15.6 yaml_validator.py
+A15.7 snapshot_store.py
+A15.8 activation.py
+A15.9 reload_manager.py
+A15.10 registry_service.py
+A15.11 integration test harness
+A15.12 API/SDK integration binding
+
+============================================================
+18. PROGRESSION CHECKLIST
+============================================================
+
+[ ] A15.1 exception hierarchy finalized
+[ ] A15.2 shared types finalized
+[ ] A15.3 pydantic yaml models implemented
+[ ] A15.4 checksum module implemented
+[ ] A15.5 manifest-first loader implemented
+[ ] A15.6 cross-registry validator implemented
+[ ] A15.7 immutable snapshot store implemented
+[ ] A15.8 activation + rollback flow implemented
+[ ] A15.9 reload manager implemented
+[ ] A15.10 registry service facade implemented
+[ ] A15.11 unit tests pass
+[ ] A15.12 integration tests pass
+[ ] A15.13 startup bootstrap wired
+[ ] A15.14 parser/service integration wired
+
+============================================================
+19. STEP UPDATE TEMPLATE
+============================================================
+
+STEP_UPDATE
+phase=A15
+step_id=
+date_utc=
+module=
+version=
+status=PASS|WARN|FAIL
+objective=
+implemented=
+tests_run=
+result_summary=
+known_risks=
+next_step=
+
+============================================================
+20. STRATEGY / LOGIC USE RECORD TEMPLATE
+============================================================
+
+STRATEGY_LOGIC_USE_RECORD
+record_id=
+date_utc=
+component=registry_loader_subsystem
+bundle_version=
+active_digest=
+use_case=bridge_parser|legacy_migration|metric_normalization|strategy_normalization|timeframe_resolution
+logic_used=
+input_source=
+output_contract=
+failure_mode_checked=
+rollback_checked=yes|no
+tests_evidence=
+notes=
+
+============================================================
+21. FINAL LOCK FOR A15
+============================================================
+
+จาก A15 เป็นต้นไป ให้ถือกติกานี้เป็นมาตรฐาน:
+
+1. Registry loading ใช้ manifest-first เท่านั้น
+2. Registry activation เป็น bundle-level atomic activation เท่านั้น
+3. Active registry access อ่านจาก immutable in-memory snapshot เท่านั้น
+4. Partial reload ถูกห้าม
+5. Invalid new bundle ห้ามแทน active bundle เดิม
+6. Bot/API/SDK อ่านผ่าน RegistryService เท่านั้น
+7. Registry subsystem เป็น production control plane component และต้อง fail-fast เมื่อ config ไม่ปลอดภัย

@@ -1,0 +1,31 @@
+{
+  "version": "v1.0.0",
+  "canonical_symbol": "XAUUSD",
+  "market_data_root": "C:\\Data\\Bot\\central_market_data\\tf",
+  "backtest_results_root": "C:\\Data\\Bot\\central_backtest_results",
+  "strategy_registry_root": "C:\\Data\\Bot\\central_strategy_registry",
+  "schedule": "weekly",
+  "locked_timeframes": [
+    "M1",
+    "M5",
+    "M10",
+    "M15",
+    "H1",
+    "H4"
+  ],
+  "validation_modes": [
+    "insample",
+    "outsample",
+    "walkforward"
+  ],
+  "evaluation_metrics": [
+    "net_profit",
+    "profit_factor",
+    "expectancy",
+    "max_drawdown",
+    "total_trades",
+    "win_rate",
+    "avg_win",
+    "avg_loss"
+  ]
+}

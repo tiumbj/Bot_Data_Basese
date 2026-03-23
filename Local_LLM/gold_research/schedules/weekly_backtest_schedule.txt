@@ -1,0 +1,17 @@
+WEEKLY BACKTEST SCHEDULE
+
+รอบที่ต้องรันทุกสัปดาห์:
+- M1
+- M5
+- M10
+- M15
+- H1
+- H4
+
+validation:
+- insample
+- outsample
+- walkforward
+
+ผลลัพธ์ต้องถูกส่งไป:
+C:\Data\data_base\backtest_results\central_backtest_results

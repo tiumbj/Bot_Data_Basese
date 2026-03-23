@@ -1,0 +1,556 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database + Bot Split Model
+# ที่อยู่ไฟล์: /mnt/data/intelligent_db_bot_split_model_v1_1_0.txt
+# เวอร์ชัน: v1.1.0
+# ============================================================
+
+PROJECT LOCK UPDATE
+แยกโปรเจกต์ออกเป็น 2 ส่วนหลักอย่างชัดเจน
+
+PART A: INTELLIGENT DATABASE PLATFORM
+PART B: BOT RUNTIME PLATFORM
+
+============================================================
+1) CORE DECISION
+============================================================
+
+จากนี้ห้ามผสม 2 ส่วนนี้เข้าด้วยกัน
+
+A. Intelligent Database Platform
+หน้าที่:
+- ingest historical + realtime market data
+- build canonical dataset
+- run backtest
+- generate labels
+- build memory cases
+- update retrieval index
+- publish weekly intelligence snapshot
+- serve data/results to any bot
+
+B. Bot Runtime Platform
+หน้าที่:
+- ขอข้อมูล / query จาก Intelligent Database Platform
+- รับ signal context / regime / similar cases / approved packages
+- สร้าง candidate setup
+- ส่ง realtime multi-TF summary เข้า local LLM
+- รับ final confirm / exit analysis
+- ส่งคำสั่งเข้า MT5
+- monitor order
+- ส่งผล order กลับไปเก็บที่ Intelligent Database Platform
+
+หลักการ:
+Database Platform = สมองกลาง + ห้องวิจัย + knowledge service
+Bot Platform = ผู้ใช้งานข้อมูลกลางเพื่อเทรดจริง
+
+============================================================
+2) WHY THIS SPLIT IS CORRECT
+============================================================
+
+เหตุผลที่ต้องแยก:
+1. ลดการพังจากการแก้ bot แล้วกระทบ research layer
+2. ทำให้ bot อื่นมาใช้ข้อมูลกลางได้ทันที
+3. ทำให้ backtest/label/memory กลายเป็นสินทรัพย์กลางของทั้งระบบ
+4. ทำให้รอบ weekly research และ live trading แยกกันชัด
+5. ทำให้ versioning, validation, rollback, and audit ง่ายขึ้น
+6. ทำให้ระบบ database platform สามารถพัฒนาให้ฉลาดขึ้นเรื่อย ๆ โดยไม่ต้องแก้ bot ทุกครั้ง
+
+============================================================
+3) PART A - INTELLIGENT DATABASE PLATFORM
+============================================================
+
+เป้าหมาย:
+สร้างระบบกลางแบบ standalone ที่รันเองได้, update เองได้, และพร้อมให้บริการ bot อื่นเสมอ
+
+3.1 หน้าที่หลัก
+- ดึงข้อมูลจาก MT5
+- เก็บ raw bars
+- สร้าง canonical bars ทุก TF
+- สร้าง features
+- รัน backtest ตาม strategy packages
+- สร้าง labels
+- สร้าง trade memory
+- สร้าง similar-case retrieval index
+- สร้าง weekly intelligence report
+- publish latest approved data snapshot
+
+3.2 ลักษณะสำคัญ
+- standalone
+- deterministic pipeline
+- rerunnable
+- versioned
+- auditable
+- bot-agnostic
+- central storage
+- duplicate-safe
+- append-first and merge-safe
+
+3.3 สถานะของระบบนี้
+ระบบนี้ไม่ใช่ bot
+ระบบนี้คือ platform กลาง
+
+มันต้องตอบคำถามเหล่านี้ให้ bot ได้:
+- ตอนนี้ regime อะไร
+- TF ไหนมี edge
+- strategy package ไหนผ่าน weekly validation
+- similar historical cases ที่ใกล้กับ snapshot นี้คืออะไร
+- label distribution ล่าสุดเป็นอย่างไร
+- exit failure pattern ล่าสุดคืออะไร
+- package ไหนควรถูก block
+- package ไหนยัง active
+
+============================================================
+4) PART A - DATA ARCHITECTURE
+============================================================
+
+4.1 Storage ชั้นหลัก
+- Parquet = storage format หลัก
+- DuckDB = analytical query engine หลัก
+- Polars = data processing pipeline หลัก
+- Qdrant = similar-case retrieval / vector search layer
+- Python = orchestration layer
+
+4.2 ทำไมเลือกชุดนี้
+- Parquet อ่านเร็ว, บีบอัดดี, partition ได้
+- DuckDB เหมาะกับ analytical query บนเครื่องเดียว
+- Polars เร็วมากกับข้อมูลขนาดใหญ่
+- Qdrant เหมาะกับ retrieval ของเคสเทรด
+- Python เหมาะกับ orchestration และ integration กับ MT5
+
+4.3 ห้ามใช้ CSV เป็น storage หลัก
+CSV ใช้ได้เฉพาะ export/debug
+ห้ามใช้เป็น source-of-truth
+
+============================================================
+5) PART A - DATABASE PLATFORM MODULES
+============================================================
+
+A1. data_ingest_mt5.py
+หน้าที่:
+- ดึง historical/recent bars จาก MT5
+- append ข้อมูลใหม่
+- กัน duplicate
+- ตรวจ gap
+- normalize timezone
+- publish raw ingest log
+
+A2. timeframe_builder.py
+หน้าที่:
+- สร้างทุก timeframe วิจัยจาก canonical source
+- validate open/high/low/close alignment
+- เก็บ bars แบบ partitioned
+
+A3. feature_store_builder.py
+หน้าที่:
+- สร้าง trend, volatility, structure, session, liquidity, momentum features
+- version feature set
+- publish feature tables
+
+A4. strategy_registry.py
+หน้าที่:
+- เก็บ strategy ids
+- เก็บ strategy logic version
+- เก็บ entry/exit package mapping
+- เก็บ active/inactive state
+
+A5. backtest_runner.py
+หน้าที่:
+- รัน full / rolling / sanity backtest
+- วัด metrics
+- export trade-level records
+
+A6. label_engine.py
+หน้าที่:
+- triple-barrier labels
+- meta-labeling
+- custom failure labels
+- custom early-exit labels
+- outcome taxonomy versioning
+
+A7. memory_case_builder.py
+หน้าที่:
+- แปลง trade outcomes เป็น memory cases
+- รวม snapshot + label + summary + outcome
+- เก็บ context ก่อนเข้า / ตอนถือ / ก่อน exit
+
+A8. retrieval_index_builder.py
+หน้าที่:
+- encode memory cases
+- update Qdrant
+- validate index consistency
+- update metadata filters
+
+A9. weekly_intelligence_runner.py
+หน้าที่:
+- run weekly rolling research
+- validate approved strategy packages
+- detect drift
+- detect regime transitions
+- publish intelligence snapshot
+
+A10. publish_service.py
+หน้าที่:
+- เปิดให้อ่านข้อมูลล่าสุด
+- serve approved packages
+- serve similar cases
+- serve weekly winners
+- serve market regime summaries
+- serve exit failure patterns
+
+============================================================
+6) PART A - MANDATORY TIMEFRAMES
+============================================================
+
+Research timeframes ที่ต้องทดสอบทุก single timeframe แบบบังคับ:
+M1
+M2
+M3
+M4
+M5
+M6
+M10
+M15
+M30
+H1
+H4
+D1
+
+กฎ:
+- ทุก strategy ต้องถูกประเมินทุก TF ข้างบน
+- micro exit ต้องถูกทดสอบทุก TF ข้างบน
+- ห้ามข้าม TF เพราะเดาเอาเอง
+- final winner ต้องมาจาก evidence เท่านั้น
+
+============================================================
+7) PART A - BACKTEST MODES
+============================================================
+
+7.1 Full Backtest
+ใช้เมื่อ:
+- เปลี่ยน logic
+- เปลี่ยน features
+- เปลี่ยน labels
+- เปลี่ยน exit engine
+- เปลี่ยน LLM prompt schema สำคัญ
+- เปลี่ยน retrieval logic
+
+7.2 Rolling / Weekly Backtest
+ใช้เมื่อ:
+- ตลาดปิดแล้ว
+- ต้อง refresh intelligence
+- ต้อง update labels/memory/index
+- ต้องเช็ค drift
+- ต้อง re-rank packages
+
+7.3 Sanity Backtest
+ใช้เมื่อ:
+- ปรับ threshold เล็กน้อย
+- ปรับ config ย่อย
+- เช็ค pipeline ยังไม่พัง
+
+============================================================
+8) PART A - LABEL TAXONOMY
+============================================================
+
+ขั้นต่ำต้องมี:
+- win
+- loss
+- scratch
+- fail_fast
+- early_exit_good
+- early_exit_bad
+- trend_follow_success
+- fake_breakout_fail
+- momentum_collapse
+- regime_conflict_fail
+- should_exit_early
+- stop_hunt_fail
+- transition_damage
+- recovered_after_deep_pullback
+
+หลักการ:
+- labels ต้องตอบโจทย์ entry และ exit
+- labels ต้องสอน AI ให้รู้ pattern ของ failure
+- labels ต้อง versioned
+- ห้ามเปลี่ยนชื่อ label แบบไร้ migration
+
+============================================================
+9) PART A - WEEKLY RUN PLAN
+============================================================
+
+ทุกสัปดาห์เมื่อกด run:
+Step 1 ingest new bars from MT5
+Step 2 validate raw data and remove duplicates
+Step 3 rebuild affected timeframes
+Step 4 update feature store
+Step 5 run rolling backtest
+Step 6 update labels
+Step 7 update memory cases
+Step 8 update retrieval index
+Step 9 evaluate strategy packages
+Step 10 detect market regime drift
+Step 11 publish weekly intelligence snapshot
+Step 12 write progression log/update file
+
+ผลลัพธ์ที่ต้องได้ทุกสัปดาห์:
+- updated canonical dataset
+- updated feature store
+- updated labels
+- updated memory cases
+- updated similar-case index
+- updated approved strategy package list
+- updated regime report
+- updated progression checklist
+- updated step result text
+
+============================================================
+10) PART A - DUPLICATE CONTROL
+============================================================
+
+ระบบต้องกันซ้ำทั้ง 4 ชั้น:
+1. raw bars duplicate
+2. feature row duplicate
+3. backtest result duplicate
+4. memory case duplicate
+
+คีย์ที่แนะนำ:
+(symbol, timeframe, ts)
+(strategy_id, timeframe, window_id, run_version)
+(case_hash)
+(order_ticket or synthetic_trade_id)
+
+============================================================
+11) PART A - OUTPUTS TO SERVE OTHER BOTS
+============================================================
+
+Database Platform ต้องพร้อมให้ bot อื่นดึงข้อมูลชุดนี้:
+- latest regime summary
+- approved strategies by TF
+- approved micro exits by TF
+- top similar historical cases
+- risk regime snapshot
+- current feature snapshot
+- failure-pattern warnings
+- package quality scores
+- label distribution summary
+- last weekly intelligence report
+
+============================================================
+12) PART B - BOT RUNTIME PLATFORM
+============================================================
+
+เป้าหมาย:
+ทำ bot ให้เล็กลง ชัดขึ้น และใช้ข้อมูลจาก platform กลางเท่านั้น
+
+12.1 หน้าที่หลัก
+- รับ realtime bars/ticks จาก MT5
+- สร้าง realtime snapshot
+- query Database Platform
+- สร้าง candidate setup
+- ส่ง context เข้า local LLM
+- รับ final confirm
+- คำนวณ execution numbers
+- ส่ง order ไป MT5
+- monitor order
+- ส่ง trade outcome กลับเข้า platform กลาง
+
+12.2 ห้าม bot ทำสิ่งนี้เอง
+- ห้าม build full historical dataset เอง
+- ห้าม run full weekly research เอง
+- ห้ามเก็บ memory bank แยกของตัวเอง
+- ห้ามถือ source-of-truth labels เอง
+- ห้ามมี logic package registry คนละชุด
+
+============================================================
+13) PART B - BOT FLOW
+============================================================
+
+Step 1 Python bot รับ realtime data
+Step 2 สร้าง realtime multi-TF summary
+Step 3 ขอ regime + approved packages + similar cases จาก Database Platform
+Step 4 สร้าง candidate setup
+Step 5 ส่ง candidate + realtime summary + similar cases เข้า local LLM
+Step 6 local LLM ส่ง final confirm JSON
+Step 7 Python ตรวจ schema + hard risk rules
+Step 8 Python คำนวณ entry / SL / TP / RR / lot
+Step 9 ส่ง order เข้า MT5
+Step 10 monitor trade
+Step 11 ส่ง trade-state เข้า exit guardian
+Step 12 หาก exit signal ผ่าน guard ให้ close order
+Step 13 ส่ง order outcome / exit reason / trade journal กลับเข้า Database Platform
+
+============================================================
+14) INTELLIGENT DATABASE BECOMES THE CENTRAL BRAIN
+============================================================
+
+หลักการใหม่:
+Backtest/Database system ไม่ใช่แค่ archive
+แต่เป็น intelligent service
+
+ความหมายของคำว่า intelligent ในที่นี้:
+- update weekly
+- detect drift
+- rank strategies
+- label failures
+- classify regimes
+- learn from new outcomes
+- build usable memory for LLM
+- publish ready-to-use intelligence to bots
+
+============================================================
+15) BOT-TO-DATABASE CONTRACT
+============================================================
+
+สิ่งที่ bot ต้องส่งกลับ platform กลาง:
+- order_ticket
+- entry_time
+- exit_time
+- entry_price
+- exit_price
+- side
+- SL
+- TP
+- RR
+- position_size
+- reason_for_entry
+- reason_for_exit
+- LLM confidence
+- LLM regime tag
+- failure flags
+- realtime snapshot id
+- package id used
+- broker execution outcome
+- slippage
+- spread at entry
+- spread at exit
+
+สิ่งที่ bot ขอจาก platform กลาง:
+- approved package list
+- regime map
+- similar cases
+- strategy warnings
+- current intelligence snapshot
+- exit failure analogues
+
+============================================================
+16) GOVERNANCE LOCK
+============================================================
+
+ต้องล็อก version เหล่านี้:
+- raw data version
+- timeframe build version
+- feature version
+- backtest version
+- label version
+- memory case version
+- retrieval version
+- prompt version
+- schema version
+- package registry version
+- weekly intelligence version
+
+============================================================
+17) SUCCESS METRICS
+============================================================
+
+ห้ามดูแค่ win rate
+
+Metrics หลัก:
+- expectancy
+- profit factor
+- max drawdown
+- average losing trade
+- full SL frequency
+- early exit saved-loss rate
+- premature exit rate
+- MAE reduction
+- out-of-sample stability
+- walk-forward robustness
+- transition damage
+- package stability across windows
+- approval precision
+- exit quality score
+
+============================================================
+18) WHAT TO LOCK NOW
+============================================================
+
+LOCK 1
+แยก repo / module / folder ออกเป็น:
+- intelligent_database_platform/
+- bot_runtime_platform/
+
+LOCK 2
+ให้ database platform เป็น source-of-truth เดียว
+
+LOCK 3
+ให้ weekly run เป็นงานบังคับของ platform กลาง
+
+LOCK 4
+ให้ bot ทุกตัวต้อง query platform กลางก่อนเทรด
+
+LOCK 5
+ให้ trade outcome ทุกไม้ต้องถูกส่งกลับ platform กลาง
+
+LOCK 6
+ให้ progression checklist และ step result text ถูกอัปเดตทุกครั้งหลัง run สำเร็จ
+
+============================================================
+19) PROGRESSION CHECKLIST
+============================================================
+
+[ ] Phase A1: raw ingest pipeline ready
+[ ] Phase A2: timeframe builder ready for all mandatory TFs
+[ ] Phase A3: feature store ready
+[ ] Phase A4: backtest runner ready
+[ ] Phase A5: label engine ready
+[ ] Phase A6: memory case builder ready
+[ ] Phase A7: retrieval index ready
+[ ] Phase A8: weekly intelligence runner ready
+[ ] Phase A9: publish service ready
+[ ] Phase B1: bot runtime reads central intelligence
+[ ] Phase B2: bot runtime sends outcomes back
+[ ] Phase B3: entry confirm integration ready
+[ ] Phase B4: exit guardian integration ready
+[ ] Phase B5: MT5 live execution integration ready
+[ ] Phase B6: full end-to-end closed loop ready
+
+============================================================
+20) STEP UPDATE TEMPLATE
+============================================================
+
+STEP_RESULT_TEMPLATE
+
+date:
+phase:
+module:
+version:
+status:
+input_data:
+logic_used:
+strategy_or_label_used:
+result_summary:
+metrics_summary:
+issues_found:
+duplicates_found:
+published_outputs:
+next_step:
+
+============================================================
+21) FINAL LOCK SUMMARY
+============================================================
+
+จากนี้ architecture ที่ถูกต้องคือ:
+
+1. Intelligent Database Platform
+เป็นระบบ standalone กลาง
+ทำ ingest + backtest + labels + memory + weekly intelligence
+และพร้อมบริการ bot อื่นเสมอ
+
+2. Bot Runtime Platform
+เป็นผู้ใช้งานข้อมูลกลาง
+ทำ realtime decision + local LLM analysis + MT5 execution + monitoring
+แล้วส่งผลกลับเข้าฐานข้อมูลกลาง
+
+ประโยคเดียวจบ:
+Database Platform ต้องเป็น “สินทรัพย์กลางที่ฉลาดขึ้นทุกสัปดาห์”
+ส่วน Bot ต้องเป็น “ลูกค้าของสินทรัพย์กลางนี้” ไม่ใช่สร้างสมองของตัวเองซ้ำ

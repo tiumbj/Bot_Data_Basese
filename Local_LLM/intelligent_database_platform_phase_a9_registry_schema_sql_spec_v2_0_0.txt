@@ -1,0 +1,880 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A9 - Registry Schema SQL Spec + Dependency Map
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a9_registry_schema_sql_spec_v2_0_0.txt
+# เวอร์ชัน: v2.0.0
+# สถานะ: FINAL FOR ARCHITECTURE + REGISTRY CONTRACT
+# ============================================================
+
+VERSION: v2.0.0
+DATE: 2026-03-20
+PROJECT: Local_LLM / gold_research
+SCOPE: Registry schema, SQL contract, dependency map, lineage, publish contract, idempotent write contract
+
+============================================================
+0. OBJECTIVE
+============================================================
+เอกสารนี้เป็น Phase A9 ของ Intelligent Database Platform
+หน้าที่ของเอกสารนี้คือ:
+1. ล็อก registry schema กลางที่ใช้กับ production
+2. ล็อกตาราง metadata / audit / package / publish / live feedback
+3. ล็อก dependency map ระหว่าง ingest -> canonical -> features -> backtest -> labels -> publish -> bot access
+4. ล็อก write contract แบบ idempotent เพื่อให้ bot หลายตัวใช้งานร่วมกันได้โดยไม่สะดุด
+5. ล็อก SQL naming, index policy, event lineage, retention, and migration rules
+
+ข้อสรุปสำคัญ:
+- DuckDB = registry / analytical metadata plane
+- Parquet = primary data lake storage
+- Qdrant = similarity retrieval plane
+- FastAPI + Python SDK = access plane
+- Bot ห้าม query storage ภายในตรง
+- Bot อ่านผ่าน service/SDK/API เท่านั้น
+
+============================================================
+1. ARCHITECTURE DECISION
+============================================================
+1.1 Source of truth
+- Time-series canonical OHLCV = Parquet
+- Feature store = Parquet
+- Backtest outputs = Parquet + registry summary in DuckDB
+- Labels / intelligence summaries / package registry / publish state / live feedback registry = DuckDB
+- Similar case vectors = Qdrant
+
+1.2 Read pattern
+- Heavy analytical read = DuckDB scans Parquet/views
+- Bot production read = SDK/API read from published tables/views only
+- Retrieval read = Qdrant + published metadata join
+
+1.3 Write pattern
+- Raw ingest write -> staging parquet
+- Canonical accepted write -> canonical parquet
+- Quarantine write -> quarantine parquet + registry row in DuckDB
+- Backtest result write -> result parquet + registry summary row
+- Label write -> label parquet + registry summary row
+- Publish write -> DuckDB publish registry + pointer to artifacts
+- Live feedback write -> DuckDB event tables
+
+============================================================
+2. REGISTRY DESIGN PRINCIPLES
+============================================================
+2.1 Registry goals
+- Traceability
+- Idempotency
+- Fast production lookup
+- Safe multi-bot access
+- Stable publish contract
+- Easy rollback
+
+2.2 Registry rules
+- Every pipeline run must have run_id
+- Every produced artifact must have artifact_id
+- Every published package must have package_id and publish_version
+- Every bot write must carry source_bot_id + event_id + event_ts_utc
+- Every mutable business state must be reconstructable from append-only events or versioned tables
+
+2.3 Naming rules
+- snake_case only
+- timestamps use *_ts_utc
+- booleans use is_* / has_*
+- primary keys end with _id
+- foreign keys must use exact referenced key name
+- views use vw_
+- append-only logs use evt_
+- dimension tables use dim_
+- run tables use run_
+- publish tables use pub_
+- lookup tables use lk_
+
+============================================================
+3. CORE KEYS AND IDENTIFIERS
+============================================================
+3.1 Required IDs
+- run_id: unique execution id for one orchestrated pipeline run
+- artifact_id: unique id for one physical output artifact
+- package_id: stable id for one strategy/micro-exit/research package
+- publish_id: unique id for one publish action
+- event_id: unique id for one incoming bot/system event
+- trade_uid: unique trade lifecycle id
+- case_id: unique similar-case memory id
+- label_batch_id: unique label generation batch id
+- feature_batch_id: unique feature generation batch id
+
+3.2 ID format recommendation
+- Prefix + UTC compact ts + short hash
+Examples:
+  run_20260320T093000Z_ab12cd34
+  pkg_m30_pullbackdeep_2f93e1a1
+  evt_exec_20260320T094002Z_55ab8891
+
+3.3 Idempotency keys
+- ingest batch: source_name + symbol + timeframe + source_window_start + source_window_end + raw_batch_hash
+- bot event: source_bot_id + event_type + external_ref + event_ts_utc bucket + payload_hash
+- publish: package_id + publish_scope + target_alias + content_hash
+
+============================================================
+4. DUCKDB DATABASE LAYOUT
+============================================================
+Database file name:
+registry.duckdb
+
+Logical schemas:
+- meta
+- ingest
+- features
+- backtest
+- labels
+- publish
+- live
+- service
+- audit
+
+Note:
+DuckDB schema separation is logical organization only. Paths/artifacts remain in Parquet lake.
+
+============================================================
+5. SQL TABLE SPECIFICATION
+============================================================
+------------------------------------------------------------
+5.1 meta.run_registry
+------------------------------------------------------------
+Purpose:
+เก็บรายการ run ทั้งหมดของระบบ
+
+Columns:
+- run_id TEXT PRIMARY KEY
+- parent_run_id TEXT NULL
+- pipeline_name TEXT NOT NULL
+- run_type TEXT NOT NULL           -- full / incremental / weekly / ad_hoc / repair
+- trigger_source TEXT NOT NULL     -- manual / scheduler / bot_feedback / maintenance
+- environment TEXT NOT NULL        -- prod / research / local
+- started_ts_utc TIMESTAMP NOT NULL
+- ended_ts_utc TIMESTAMP NULL
+- status TEXT NOT NULL             -- running / succeeded / failed / partial / aborted
+- status_detail TEXT NULL
+- code_version TEXT NOT NULL
+- config_version TEXT NOT NULL
+- manifest_version TEXT NOT NULL
+- input_window_start_ts_utc TIMESTAMP NULL
+- input_window_end_ts_utc TIMESTAMP NULL
+- source_symbols TEXT NOT NULL     -- json/text encoded list
+- source_timeframes TEXT NOT NULL  -- json/text encoded list
+- row_count_in BIGINT DEFAULT 0
+- row_count_out BIGINT DEFAULT 0
+- quarantine_count BIGINT DEFAULT 0
+- warning_count BIGINT DEFAULT 0
+- error_count BIGINT DEFAULT 0
+- created_by TEXT NOT NULL
+- notes TEXT NULL
+
+Indexes / practical lookup:
+- index on started_ts_utc
+- index on pipeline_name, status
+- index on run_type, started_ts_utc
+
+------------------------------------------------------------
+5.2 meta.artifact_registry
+------------------------------------------------------------
+Purpose:
+เก็บ pointer ของ artifact ทุกชนิด
+
+Columns:
+- artifact_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- artifact_type TEXT NOT NULL      -- raw_batch / canonical_partition / feature_partition / backtest_result / label_batch / report / package_bundle
+- artifact_role TEXT NOT NULL      -- source / intermediate / published / quarantined / audit
+- physical_format TEXT NOT NULL    -- parquet / json / txt / bin / qdrant_ref
+- storage_uri TEXT NOT NULL
+- storage_partition TEXT NULL
+- content_hash TEXT NOT NULL
+- logical_scope TEXT NOT NULL      -- symbol/tf/package/regime/etc
+- record_count BIGINT DEFAULT 0
+- byte_size BIGINT DEFAULT 0
+- created_ts_utc TIMESTAMP NOT NULL
+- is_active BOOLEAN NOT NULL DEFAULT TRUE
+- retention_class TEXT NOT NULL    -- permanent / rolling / temp / replaceable
+
+Indexes:
+- index on run_id
+- index on artifact_type, created_ts_utc
+- unique on storage_uri, content_hash
+
+------------------------------------------------------------
+5.3 ingest.source_batch_registry
+------------------------------------------------------------
+Purpose:
+ลงทะเบียน raw ingest batches เพื่อกันข้อมูลซ้ำ
+
+Columns:
+- source_batch_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- source_name TEXT NOT NULL        -- mt5 / imported_zip / manual_repair
+- symbol TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- source_window_start_ts_utc TIMESTAMP NOT NULL
+- source_window_end_ts_utc TIMESTAMP NOT NULL
+- raw_batch_hash TEXT NOT NULL
+- source_row_count BIGINT NOT NULL
+- accepted_row_count BIGINT NOT NULL
+- duplicate_row_count BIGINT NOT NULL
+- conflict_row_count BIGINT NOT NULL
+- quarantined_row_count BIGINT NOT NULL
+- continuity_gap_count BIGINT NOT NULL
+- status TEXT NOT NULL             -- accepted / partial / rejected
+- created_ts_utc TIMESTAMP NOT NULL
+
+Constraints:
+- unique(source_name, symbol, timeframe, source_window_start_ts_utc, source_window_end_ts_utc, raw_batch_hash)
+
+------------------------------------------------------------
+5.4 ingest.quarantine_registry
+------------------------------------------------------------
+Purpose:
+เก็บเหตุผลของข้อมูลที่ไม่ผ่าน contract หรือ conflict
+
+Columns:
+- quarantine_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- source_batch_id TEXT NOT NULL
+- symbol TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- row_ts_utc TIMESTAMP NULL
+- severity TEXT NOT NULL           -- warn / fail / quarantine
+- issue_type TEXT NOT NULL         -- schema / duplicate_conflict / continuity_gap / outlier / null_violation / monotonicity_violation
+- issue_code TEXT NOT NULL
+- issue_detail TEXT NULL
+- payload_hash TEXT NOT NULL
+- payload_uri TEXT NULL
+- resolution_status TEXT NOT NULL  -- unresolved / accepted_by_override / repaired / dropped
+- resolution_run_id TEXT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+- updated_ts_utc TIMESTAMP NOT NULL
+
+Indexes:
+- index on symbol, timeframe, issue_type
+- index on resolution_status
+- index on created_ts_utc
+
+------------------------------------------------------------
+5.5 features.feature_batch_registry
+------------------------------------------------------------
+Purpose:
+เก็บ metadata ของการสร้าง feature store
+
+Columns:
+- feature_batch_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- symbol TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- feature_set_version TEXT NOT NULL
+- input_canonical_artifact_id TEXT NOT NULL
+- output_feature_artifact_id TEXT NOT NULL
+- window_start_ts_utc TIMESTAMP NOT NULL
+- window_end_ts_utc TIMESTAMP NOT NULL
+- row_count BIGINT NOT NULL
+- null_ratio DOUBLE NOT NULL
+- status TEXT NOT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+
+------------------------------------------------------------
+5.6 backtest.scenario_registry
+------------------------------------------------------------
+Purpose:
+เก็บนิยาม scenario ที่ใช้ทดสอบ
+
+Columns:
+- scenario_id TEXT PRIMARY KEY
+- strategy_family TEXT NOT NULL
+- entry_logic_id TEXT NOT NULL
+- exit_logic_id TEXT NOT NULL
+- micro_exit_logic_id TEXT NOT NULL
+- filter_stack_id TEXT NOT NULL
+- risk_model_id TEXT NOT NULL
+- execution_model_id TEXT NOT NULL
+- regime_scope TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- parameter_hash TEXT NOT NULL
+- parameter_json TEXT NOT NULL
+- is_active BOOLEAN NOT NULL DEFAULT TRUE
+- created_ts_utc TIMESTAMP NOT NULL
+- retired_ts_utc TIMESTAMP NULL
+
+Constraints:
+- unique(strategy_family, entry_logic_id, exit_logic_id, micro_exit_logic_id, filter_stack_id, risk_model_id, execution_model_id, regime_scope, timeframe, parameter_hash)
+
+------------------------------------------------------------
+5.7 backtest.backtest_run_registry
+------------------------------------------------------------
+Purpose:
+เก็บรอบการทดสอบ
+
+Columns:
+- backtest_run_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- scenario_id TEXT NOT NULL
+- symbol TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- data_window_start_ts_utc TIMESTAMP NOT NULL
+- data_window_end_ts_utc TIMESTAMP NOT NULL
+- split_scheme TEXT NOT NULL       -- wf / rolling / holdout / fullscan
+- market_regime_scope TEXT NOT NULL
+- trade_count BIGINT NOT NULL
+- win_rate DOUBLE NOT NULL
+- expectancy_r DOUBLE NOT NULL
+- profit_factor DOUBLE NOT NULL
+- max_drawdown_r DOUBLE NOT NULL
+- sharpe_like DOUBLE NULL
+- stability_score DOUBLE NOT NULL
+- slippage_model TEXT NOT NULL
+- spread_model TEXT NOT NULL
+- output_artifact_id TEXT NOT NULL
+- status TEXT NOT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+
+Indexes:
+- index on scenario_id, timeframe
+- index on symbol, timeframe, created_ts_utc
+- index on expectancy_r, stability_score
+
+------------------------------------------------------------
+5.8 backtest.package_registry
+------------------------------------------------------------
+Purpose:
+เก็บ package ที่ผ่านเกณฑ์พร้อมให้ publish
+
+Columns:
+- package_id TEXT PRIMARY KEY
+- package_type TEXT NOT NULL       -- strategy / micro_exit / combined
+- timeframe TEXT NOT NULL
+- symbol_scope TEXT NOT NULL       -- GOLD / XAUUSD family
+- source_backtest_run_id TEXT NOT NULL
+- source_scenario_id TEXT NOT NULL
+- package_version TEXT NOT NULL
+- package_status TEXT NOT NULL     -- candidate / approved / published / superseded / revoked
+- approval_score DOUBLE NOT NULL
+- robustness_score DOUBLE NOT NULL
+- sensitivity_score DOUBLE NOT NULL
+- regime_fit_score DOUBLE NOT NULL
+- live_alignment_score DOUBLE NULL
+- manifest_artifact_id TEXT NOT NULL
+- package_hash TEXT NOT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+- approved_ts_utc TIMESTAMP NULL
+- superseded_by_package_id TEXT NULL
+
+Indexes:
+- index on timeframe, package_status
+- index on approval_score desc
+- unique(timeframe, package_hash)
+
+------------------------------------------------------------
+5.9 labels.label_batch_registry
+------------------------------------------------------------
+Purpose:
+เก็บรอบการสร้าง labels
+
+Columns:
+- label_batch_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- symbol TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- label_version TEXT NOT NULL
+- label_family TEXT NOT NULL       -- trade_outcome / regime / exit_failure / continuation / reversal
+- input_artifact_id TEXT NOT NULL
+- output_artifact_id TEXT NOT NULL
+- labeled_row_count BIGINT NOT NULL
+- class_balance_json TEXT NOT NULL
+- status TEXT NOT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+
+------------------------------------------------------------
+5.10 labels.case_memory_registry
+------------------------------------------------------------
+Purpose:
+ลงทะเบียน historical cases ที่พร้อม retrieval
+
+Columns:
+- case_id TEXT PRIMARY KEY
+- label_batch_id TEXT NOT NULL
+- symbol TEXT NOT NULL
+- timeframe TEXT NOT NULL
+- case_ts_utc TIMESTAMP NOT NULL
+- regime_tag TEXT NOT NULL
+- outcome_label TEXT NOT NULL
+- pattern_signature_hash TEXT NOT NULL
+- embedding_provider TEXT NOT NULL
+- embedding_version TEXT NOT NULL
+- qdrant_collection TEXT NOT NULL
+- qdrant_point_id TEXT NOT NULL
+- metadata_artifact_id TEXT NOT NULL
+- is_active BOOLEAN NOT NULL DEFAULT TRUE
+- created_ts_utc TIMESTAMP NOT NULL
+
+Indexes:
+- index on timeframe, regime_tag, outcome_label
+- unique(qdrant_collection, qdrant_point_id)
+
+------------------------------------------------------------
+5.11 publish.publish_registry
+------------------------------------------------------------
+Purpose:
+เก็บ publish action ที่ bot จะอ่านเป็นหลัก
+
+Columns:
+- publish_id TEXT PRIMARY KEY
+- run_id TEXT NOT NULL
+- publish_scope TEXT NOT NULL      -- package / intelligence_snapshot / service_payload
+- target_alias TEXT NOT NULL       -- active_m30_strategy / active_micro_exit_m1 / weekly_snapshot_latest
+- source_object_id TEXT NOT NULL   -- package_id or artifact_id
+- source_object_type TEXT NOT NULL -- package / artifact / report
+- publish_version TEXT NOT NULL
+- content_hash TEXT NOT NULL
+- effective_from_ts_utc TIMESTAMP NOT NULL
+- effective_to_ts_utc TIMESTAMP NULL
+- publish_status TEXT NOT NULL     -- active / retired / rolled_back
+- rollback_publish_id TEXT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+- created_by TEXT NOT NULL
+
+Constraints:
+- unique(target_alias, publish_version)
+
+------------------------------------------------------------
+5.12 publish.active_alias_registry
+------------------------------------------------------------
+Purpose:
+ชี้ alias ปัจจุบันที่ bot ใช้เรียก
+
+Columns:
+- target_alias TEXT PRIMARY KEY
+- current_publish_id TEXT NOT NULL
+- current_source_object_id TEXT NOT NULL
+- current_source_object_type TEXT NOT NULL
+- current_content_hash TEXT NOT NULL
+- effective_from_ts_utc TIMESTAMP NOT NULL
+- updated_ts_utc TIMESTAMP NOT NULL
+
+------------------------------------------------------------
+5.13 live.trade_event_log
+------------------------------------------------------------
+Purpose:
+append-only event log จาก bot/execution/monitoring
+
+Columns:
+- event_id TEXT PRIMARY KEY
+- trade_uid TEXT NOT NULL
+- source_bot_id TEXT NOT NULL
+- source_instance_id TEXT NOT NULL
+- event_type TEXT NOT NULL         -- signal_generated / llm_confirmed / order_sent / order_filled / order_rejected / exit_triggered / order_closed
+- external_ref TEXT NULL           -- mt5 ticket / broker order id
+- symbol TEXT NOT NULL
+- timeframe TEXT NULL
+- event_ts_utc TIMESTAMP NOT NULL
+- ingest_ts_utc TIMESTAMP NOT NULL
+- event_payload_json TEXT NOT NULL
+- payload_hash TEXT NOT NULL
+- idempotency_key TEXT NOT NULL
+- accepted_status TEXT NOT NULL    -- accepted / duplicate_ignored / rejected
+
+Indexes:
+- index on trade_uid, event_ts_utc
+- index on source_bot_id, event_type
+- unique(idempotency_key)
+
+------------------------------------------------------------
+5.14 live.trade_state_projection
+------------------------------------------------------------
+Purpose:
+ตาราง projection เพื่ออ่านสถานะล่าสุดของแต่ละ trade ได้เร็ว
+
+Columns:
+- trade_uid TEXT PRIMARY KEY
+- latest_event_id TEXT NOT NULL
+- latest_event_type TEXT NOT NULL
+- latest_event_ts_utc TIMESTAMP NOT NULL
+- symbol TEXT NOT NULL
+- timeframe TEXT NULL
+- side TEXT NULL
+- entry_price DOUBLE NULL
+- sl_price DOUBLE NULL
+- tp_price DOUBLE NULL
+- rr_planned DOUBLE NULL
+- fill_price DOUBLE NULL
+- exit_price DOUBLE NULL
+- pnl_r DOUBLE NULL
+- close_reason TEXT NULL
+- package_id TEXT NULL
+- regime_tag TEXT NULL
+- llm_confidence DOUBLE NULL
+- execution_status TEXT NOT NULL
+- monitoring_status TEXT NOT NULL
+- updated_ts_utc TIMESTAMP NOT NULL
+
+Note:
+This table is derived from live.trade_event_log and can be rebuilt.
+
+------------------------------------------------------------
+5.15 live.feedback_registry
+------------------------------------------------------------
+Purpose:
+สรุป feedback ที่จะย้อนกลับเข้า research/intelligence
+
+Columns:
+- feedback_id TEXT PRIMARY KEY
+- trade_uid TEXT NOT NULL
+- source_bot_id TEXT NOT NULL
+- package_id TEXT NULL
+- feedback_family TEXT NOT NULL    -- slippage / execution_quality / exit_quality / regime_mismatch / llm_mismatch
+- severity TEXT NOT NULL
+- feedback_score DOUBLE NULL
+- feedback_json TEXT NOT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+- processed_in_run_id TEXT NULL
+- processing_status TEXT NOT NULL  -- pending / processed / ignored
+
+Indexes:
+- index on processing_status, created_ts_utc
+- index on package_id, feedback_family
+
+------------------------------------------------------------
+5.16 service.read_model_registry
+------------------------------------------------------------
+Purpose:
+เก็บ metadata ของ service payload ที่ bot จะเรียก
+
+Columns:
+- read_model_id TEXT PRIMARY KEY
+- model_name TEXT NOT NULL         -- market_snapshot / signal_context / active_package / similar_case_bundle
+- model_version TEXT NOT NULL
+- source_publish_id TEXT NOT NULL
+- materialized_artifact_id TEXT NULL
+- freshness_seconds INTEGER NOT NULL
+- schema_version TEXT NOT NULL
+- created_ts_utc TIMESTAMP NOT NULL
+- is_active BOOLEAN NOT NULL DEFAULT TRUE
+
+============================================================
+6. RECOMMENDED VIEWS
+============================================================
+6.1 publish.vw_active_packages
+Fields:
+- timeframe
+- target_alias
+- package_id
+- package_version
+- package_type
+- approval_score
+- robustness_score
+- regime_fit_score
+- effective_from_ts_utc
+
+6.2 publish.vw_latest_intelligence_snapshot
+Fields:
+- target_alias
+- publish_version
+- storage_uri
+- effective_from_ts_utc
+
+6.3 live.vw_open_trade_states
+Fields:
+- trade_uid
+- symbol
+- side
+- fill_price
+- sl_price
+- tp_price
+- package_id
+- latest_event_type
+- latest_event_ts_utc
+
+6.4 audit.vw_failed_runs
+Fields:
+- run_id
+- pipeline_name
+- status
+- status_detail
+- started_ts_utc
+- ended_ts_utc
+
+============================================================
+7. RELATIONSHIP MAP
+============================================================
+7.1 High-level lineage
+raw ingest batch
+-> source_batch_registry
+-> quarantine_registry (if fail)
+-> canonical parquet artifact
+-> artifact_registry
+-> feature_batch_registry
+-> backtest_run_registry
+-> package_registry
+-> publish_registry
+-> active_alias_registry
+-> service.read_model_registry
+-> SDK/API/Bots
+
+7.2 Live loop lineage
+Bot runtime
+-> live.trade_event_log
+-> live.trade_state_projection
+-> live.feedback_registry
+-> next weekly run consumes feedback
+-> labels / package review / intelligence publish update
+
+============================================================
+8. DEPENDENCY MAP BY MODULE
+============================================================
+8.1 Ingest modules depend on
+- meta.run_registry
+- ingest.source_batch_registry
+- ingest.quarantine_registry
+- meta.artifact_registry
+
+8.2 Feature modules depend on
+- canonical parquet artifacts
+- features.feature_batch_registry
+- meta.artifact_registry
+
+8.3 Backtest modules depend on
+- feature artifacts
+- backtest.scenario_registry
+- backtest.backtest_run_registry
+- backtest.package_registry
+- meta.artifact_registry
+
+8.4 Label/memory modules depend on
+- backtest outputs
+- labels.label_batch_registry
+- labels.case_memory_registry
+- meta.artifact_registry
+- Qdrant collections
+
+8.5 Publish modules depend on
+- backtest.package_registry
+- labels outputs
+- meta.artifact_registry
+- publish.publish_registry
+- publish.active_alias_registry
+- service.read_model_registry
+
+8.6 Bot service modules depend on
+- publish.vw_active_packages
+- publish.vw_latest_intelligence_snapshot
+- service.read_model_registry
+- Qdrant metadata joins
+
+8.7 Live feedback modules depend on
+- live.trade_event_log
+- live.trade_state_projection
+- live.feedback_registry
+- publish.active_alias_registry
+
+============================================================
+9. SQL CONTRACT RULES
+============================================================
+9.1 No direct bot access
+- Bots must not read internal schemas except through service layer
+- Allowed bot-facing reads are materialized read models / API payloads / SDK responses only
+
+9.2 Append-only events
+- live.trade_event_log is append-only
+- Corrections must be new events, not in-place edits
+
+9.3 Idempotent writes
+- All write endpoints must require idempotency_key
+- Duplicate keys return accepted previous result, not error cascade
+
+9.4 Rebuildable projections
+- trade_state_projection may be dropped and rebuilt from event log
+- active_alias_registry may be rebuilt from publish_registry
+
+9.5 Immutable artifacts
+- Once artifact content_hash is registered, artifact content must not mutate
+- New content = new artifact_id
+
+============================================================
+10. MINIMAL SQL DDL TEMPLATE (REFERENCE SHAPE)
+============================================================
+Example shape only:
+
+CREATE TABLE IF NOT EXISTS meta.run_registry (
+    run_id TEXT PRIMARY KEY,
+    parent_run_id TEXT,
+    pipeline_name TEXT NOT NULL,
+    run_type TEXT NOT NULL,
+    trigger_source TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    started_ts_utc TIMESTAMP NOT NULL,
+    ended_ts_utc TIMESTAMP,
+    status TEXT NOT NULL,
+    status_detail TEXT,
+    code_version TEXT NOT NULL,
+    config_version TEXT NOT NULL,
+    manifest_version TEXT NOT NULL,
+    input_window_start_ts_utc TIMESTAMP,
+    input_window_end_ts_utc TIMESTAMP,
+    source_symbols TEXT NOT NULL,
+    source_timeframes TEXT NOT NULL,
+    row_count_in BIGINT DEFAULT 0,
+    row_count_out BIGINT DEFAULT 0,
+    quarantine_count BIGINT DEFAULT 0,
+    warning_count BIGINT DEFAULT 0,
+    error_count BIGINT DEFAULT 0,
+    created_by TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS publish.active_alias_registry (
+    target_alias TEXT PRIMARY KEY,
+    current_publish_id TEXT NOT NULL,
+    current_source_object_id TEXT NOT NULL,
+    current_source_object_type TEXT NOT NULL,
+    current_content_hash TEXT NOT NULL,
+    effective_from_ts_utc TIMESTAMP NOT NULL,
+    updated_ts_utc TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS live.trade_event_log (
+    event_id TEXT PRIMARY KEY,
+    trade_uid TEXT NOT NULL,
+    source_bot_id TEXT NOT NULL,
+    source_instance_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    external_ref TEXT,
+    symbol TEXT NOT NULL,
+    timeframe TEXT,
+    event_ts_utc TIMESTAMP NOT NULL,
+    ingest_ts_utc TIMESTAMP NOT NULL,
+    event_payload_json TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    accepted_status TEXT NOT NULL
+);
+
+============================================================
+11. PRODUCTION ACCESS MODEL
+============================================================
+11.1 SDK read targets
+SDK must read only from:
+- publish.active_alias_registry
+- publish.vw_active_packages
+- service.read_model_registry
+- materialized service payload artifacts
+- Qdrant similar-case collection through service abstraction
+
+11.2 SDK write targets
+SDK must write only via service methods:
+- append_trade_event()
+- upsert_feedback_item()
+- request_trade_context()
+- get_active_package()
+- get_similar_cases()
+
+11.3 HTTP API role
+HTTP API mirrors SDK contract
+- GET /health
+- GET /packages/active
+- GET /intelligence/latest
+- POST /context/signal
+- POST /events/trade
+- POST /feedback
+
+============================================================
+12. ROLLBACK AND FAILOVER RULES
+============================================================
+12.1 Publish rollback
+- Never overwrite active package content in place
+- Create new publish row with rollback reference
+- Update active_alias_registry atomically
+
+12.2 Event ingest failover
+- If live write fails transiently, queue locally and retry with same idempotency_key
+- If retry exhausted, write dead-letter record
+
+12.3 Read failover
+- If new publish artifact unavailable, bots continue reading previous active alias
+- Fail closed for write corruption, fail open for read-only stale package if freshness within allowed budget
+
+============================================================
+13. RETENTION POLICY
+============================================================
+- run_registry: permanent
+- artifact_registry: permanent metadata; artifact retention depends on class
+- quarantine_registry: permanent metadata, payload artifacts rolling >= 180 days recommended
+- trade_event_log: permanent or archive-only append strategy
+- trade_state_projection: rebuildable, no hard permanence required
+- publish_registry: permanent
+- active_alias_registry: current state only, rebuildable
+
+============================================================
+14. MIGRATION POLICY
+============================================================
+- Every schema change must increment schema_version
+- Backward-compatible additions first
+- Do not rename/remove bot-facing fields without new read_model_version
+- Migration scripts must be additive where possible
+- Breaking changes require dual-publish window
+
+============================================================
+15. PROGRESSION CHECKLIST
+============================================================
+[LOCKED] Access architecture: SDK + FastAPI facade
+[LOCKED] Storage split: Parquet + DuckDB + Qdrant
+[LOCKED] Registry schemas and key tables
+[LOCKED] Publish alias model
+[LOCKED] Append-only live event model
+[LOCKED] Feedback loop into weekly intelligence
+[NEXT] A10 code skeleton spec
+[NEXT] A11 SQL bootstrap file + path manifest
+[NEXT] A12 SDK contract file
+[NEXT] A13 API endpoint payload spec
+
+============================================================
+16. STEP UPDATE TEMPLATE
+============================================================
+STEP NAME:
+VERSION:
+DATE:
+STATUS: PASS / PARTIAL / FAIL
+OBJECTIVE:
+INPUTS:
+OUTPUTS:
+TABLES TOUCHED:
+ARTIFACTS PRODUCED:
+LOGIC USED:
+VALIDATION RESULT:
+RISKS FOUND:
+NEXT ACTION:
+
+============================================================
+17. STRATEGY / LOGIC RECORD TEMPLATE
+============================================================
+RECORD ID:
+DATE:
+TIMEFRAME:
+STRATEGY FAMILY:
+ENTRY LOGIC ID:
+EXIT LOGIC ID:
+MICRO EXIT ID:
+FILTER STACK ID:
+RISK MODEL ID:
+PACKAGE ID:
+BACKTEST RUN ID:
+ROBUSTNESS SCORE:
+REGIME FIT:
+LIVE ALIGNMENT:
+DECISION: APPROVE / HOLD / REJECT
+REASON:
+
+============================================================
+18. FINAL DECISION FOR THIS PHASE
+============================================================
+Phase A9 is sufficient to finalize the registry contract for production architecture.
+From this point onward, implementation should not redesign the data contract again.
+Only additive refinement is allowed.
+
+LOCKED DECISION:
+- Registry metadata plane = DuckDB
+- Primary bot access = SDK + FastAPI
+- Bot write model = append-only event + idempotent feedback
+- Published aliases = only stable read contract
+- Internal tables are not direct public contract
+

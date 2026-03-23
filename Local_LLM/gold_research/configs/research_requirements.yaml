@@ -1,0 +1,227 @@
+version: "v1.0.0"
+project_id: "gold_research_tournament_v1"
+project_name: "Gold Strategy Research Tournament"
+
+data:
+  symbol: "XAUUSD"
+  ohlc_root: "C:\\Data\\Bot\\Local_LLM\\gold_research\\dataset\\tf"
+  benchmark_trades_jsonl: "C:\\Data\\Bot\\central_backtest_results\\paper_trade_historical\\trades.jsonl"
+  benchmark_ohlc_m30: "C:\\Data\\Bot\\central_market_data\\tf\\XAUUSD_M30.csv"
+  allowed_tf_scan:
+    - "M5"
+    - "M15"
+    - "M30"
+    - "H1"
+  allowed_tf_deepen:
+    - "M1"
+    - "M2"
+    - "M3"
+    - "M4"
+    - "M6"
+    - "M10"
+    - "H4"
+    - "D1"
+
+walkforward:
+  enabled: true
+  train_windows:
+    - "2009-01-01:2014-12-31"
+    - "2010-01-01:2015-12-31"
+    - "2011-01-01:2016-12-31"
+  validate_windows:
+    - "2015-01-01:2015-12-31"
+    - "2016-01-01:2016-12-31"
+    - "2017-01-01:2017-12-31"
+
+cost_model:
+  spread_mode: "fixed_points"
+  spread_points:
+    M1: 35
+    M2: 35
+    M3: 35
+    M4: 35
+    M5: 35
+    M6: 35
+    M10: 35
+    M15: 40
+    M30: 45
+    H1: 50
+    H4: 60
+    D1: 70
+  slippage_mode: "fixed_points"
+  slippage_points:
+    M1: 10
+    M2: 10
+    M3: 10
+    M4: 10
+    M5: 10
+    M6: 10
+    M10: 10
+    M15: 12
+    M30: 15
+    H1: 18
+    H4: 22
+    D1: 25
+
+research:
+  stage_1_scan:
+    enabled: true
+    timeframes:
+      - "M5"
+      - "M15"
+      - "M30"
+      - "H1"
+    top_percent_to_keep: 15
+  stage_2_deepen:
+    enabled: true
+    timeframes:
+      - "M1"
+      - "M2"
+      - "M3"
+      - "M4"
+      - "M6"
+      - "M10"
+      - "H4"
+      - "D1"
+
+benchmark:
+  enabled: true
+  strategy_id: "locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep_regime_block_conditional_max_hold_4h_cooldown_2loss_skip1"
+  family: "deep_pullback_continuation"
+  locked_winner_logic:
+    regime_block:
+      block_inside_ema_stack: true
+      block_bull_lowvol_above_ema_stack: true
+    micro_exit:
+      mode: "conditional_max_hold"
+      max_hold_hours: 4
+      only_if_pnl_not_positive: true
+    cooldown:
+      trigger_consecutive_losses: 2
+      skip_next_signals: 1
+
+families:
+  - family_id: "deep_pullback_continuation"
+    enabled: true
+    category: "trend_continuation"
+    description: "Continuation after deep pullback in active trend"
+  - family_id: "shallow_pullback_continuation"
+    enabled: true
+    category: "trend_continuation"
+    description: "Continuation after shallow retracement"
+  - family_id: "break_retest_continuation"
+    enabled: true
+    category: "trend_continuation"
+    description: "Break and retest continuation"
+  - family_id: "ema_stack_continuation"
+    enabled: true
+    category: "trend_continuation"
+    description: "EMA stack trend continuation"
+  - family_id: "range_breakout"
+    enabled: true
+    category: "breakout"
+    description: "Breakout from consolidation range"
+  - family_id: "volatility_breakout"
+    enabled: true
+    category: "breakout"
+    description: "ATR squeeze / volatility expansion breakout"
+  - family_id: "session_breakout"
+    enabled: true
+    category: "breakout"
+    description: "Session range breakout"
+  - family_id: "ema_reversion"
+    enabled: true
+    category: "mean_reversion"
+    description: "Reversion back to EMA stack"
+  - family_id: "midline_reversion"
+    enabled: true
+    category: "mean_reversion"
+    description: "Return to central tendency / midline"
+  - family_id: "bollinger_reversion"
+    enabled: true
+    category: "mean_reversion"
+    description: "Volatility overextension reversion"
+  - family_id: "failed_breakout_reversal"
+    enabled: true
+    category: "reversal"
+    description: "Fake breakout then reversal"
+  - family_id: "liquidity_sweep_reversal"
+    enabled: true
+    category: "reversal"
+    description: "Sweep liquidity then reverse"
+
+entry_styles:
+  - "aggressive"
+  - "confirm"
+  - "deep"
+
+micro_exits:
+  - exit_id: "none"
+    enabled: true
+    type: "none"
+  - exit_id: "conditional_max_hold_4h"
+    enabled: true
+    type: "conditional_max_hold"
+    max_hold_hours: 4
+    only_if_pnl_not_positive: true
+  - exit_id: "conditional_max_hold_6h"
+    enabled: true
+    type: "conditional_max_hold"
+    max_hold_hours: 6
+    only_if_pnl_not_positive: true
+  - exit_id: "fast_invalidation"
+    enabled: true
+    type: "fast_invalidation"
+  - exit_id: "momentum_fade"
+    enabled: true
+    type: "momentum_fade"
+
+cooldowns:
+  - cooldown_id: "none"
+    enabled: true
+    trigger_consecutive_losses: 0
+    skip_next_signals: 0
+  - cooldown_id: "cooldown_2L_skip1"
+    enabled: true
+    trigger_consecutive_losses: 2
+    skip_next_signals: 1
+  - cooldown_id: "cooldown_3L_skip1"
+    enabled: true
+    trigger_consecutive_losses: 3
+    skip_next_signals: 1
+
+regime_filters:
+  - regime_filter_id: "none"
+    enabled: true
+    strictness: "none"
+    block_inside_ema_stack: false
+    block_bull_lowvol_above_ema_stack: false
+  - regime_filter_id: "light"
+    enabled: true
+    strictness: "light"
+    block_inside_ema_stack: true
+    block_bull_lowvol_above_ema_stack: false
+  - regime_filter_id: "strict"
+    enabled: true
+    strictness: "strict"
+    block_inside_ema_stack: true
+    block_bull_lowvol_above_ema_stack: true
+
+ranking:
+  hard_gates:
+    min_trades: 150
+    min_payoff_ratio: 1.20
+    max_consecutive_losses: 8
+    min_win_rate_pct: 30.0
+    max_drawdown_pct: 25.0
+  score_weights:
+    pnl_sum: 0.25
+    payoff_ratio: 0.25
+    max_consecutive_losses: 0.20
+    max_drawdown_pct: 0.15
+    walkforward_stability: 0.15
+
+output:
+  manifest_dir: "C:\\Data\\Bot\\central_backtest_results\\research_jobs"
+  reports_dir: "C:\\Data\\Bot\\central_backtest_results\\research_reports"
+  leaderboard_dir: "C:\\Data\\Bot\\central_backtest_results\\research_leaderboards"

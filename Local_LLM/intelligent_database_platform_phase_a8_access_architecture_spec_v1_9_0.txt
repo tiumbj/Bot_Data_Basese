@@ -1,0 +1,564 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A8 Access Architecture Spec
+# เวอร์ชัน: v1.9.0
+# ประเภท: TXT Master Architecture Spec
+# สถานะ: SOLID-FOR-PRODUCTION-ARCHITECTURE
+# ============================================================
+
+[FINALIZATION DECISION]
+Yes, this version can be finalized and treated as solid at the architecture level.
+But the scope of finalization must be limited to the following frozen layers:
+1. Access architecture
+2. Service contracts
+3. Read/write boundaries
+4. Authentication and authorization model
+5. Caching policy
+6. Failure handling and failover rules
+7. Multi-bot integration rules
+8. Deployment topology baseline
+
+This version does NOT yet finalize:
+1. Full Python implementation details
+2. Every SQL migration detail
+3. Every label formula and threshold calibration
+4. Every backtest strategy package
+5. Every monitoring/dashboard screen
+
+Therefore, finalization in v1.9.0 means:
+- architecture is frozen
+- interfaces are frozen
+- integration contract is frozen
+- implementation can proceed without rethinking the core access model
+
+
+============================================================
+SECTION 1 — GOAL
+============================================================
+Design the fastest, simplest, and most production-safe method for multiple bots to access the Intelligent Database Platform without coupling directly to raw storage or internal databases.
+
+Core principle:
+- one source of truth
+- many bot consumers
+- stable contracts
+- easy configuration
+- low-latency reads
+- controlled writes
+- no direct storage coupling
+
+
+============================================================
+SECTION 2 — FINAL ACCESS STANDARD
+============================================================
+The production access standard is:
+
+A. Python SDK = primary access path
+B. FastAPI HTTP facade = universal service access path
+C. Qdrant access only through platform-controlled retrieval service by default
+D. Direct access to Parquet / DuckDB / raw files is forbidden for bots in production
+
+Reason:
+- SDK is fastest and easiest for Python bots
+- HTTP is easiest for cross-language or remote services
+- retrieval must remain centrally controlled
+- direct storage access breaks contract stability
+
+
+============================================================
+SECTION 3 — ACCESS TIERS
+============================================================
+Tier 1: Internal Python SDK
+Use when:
+- bot is Python-based
+- bot runs on same machine, same network, or same deployment group
+- low latency is important
+- config simplicity is important
+
+Tier 2: HTTP API (FastAPI)
+Use when:
+- bot is remote
+- bot is another language
+- dashboard or external service consumes platform data
+- need stable standard integration contract
+
+Tier 3: Admin / Ops access
+Use only for:
+- internal maintenance tools
+- platform diagnostics
+- migration tools
+- data repair tools
+Not for trading bots.
+
+
+============================================================
+SECTION 4 — SOURCE OF TRUTH BOUNDARY
+============================================================
+The Intelligent Database Platform is the only source of truth for:
+- canonical OHLCV
+- feature store
+- backtest artifacts
+- labels
+- package registry
+- weekly intelligence snapshots
+- case memory
+- retrieval results
+- live trade feedback records
+
+Bots may consume published views only.
+Bots may NOT consume:
+- raw MT5 batches
+- staging tables
+- quarantine tables
+- intermediate resample artifacts
+- unfinished package drafts
+- internal migration state
+
+
+============================================================
+SECTION 5 — BOT TYPES AND PERMISSIONS
+============================================================
+Type A — Read-only consumer bot
+Examples:
+- dashboard bot
+- analytics bot
+- reporting bot
+Allowed:
+- read market snapshot
+- read active package metadata
+- read labels summary
+- read intelligence snapshot
+Denied:
+- writing trade feedback
+- publishing packages
+- changing registry state
+
+Type B — Decision consumer bot
+Examples:
+- signal bot
+- local LLM confirm bot
+- strategy ranking bot
+Allowed:
+- read market context
+- read active package
+- read similar cases
+- read regime summary
+- read label summaries
+Denied:
+- direct package publishing
+- raw quarantine reads
+
+Type C — Feedback writer bot
+Examples:
+- execution bot
+- order monitor bot
+- exit monitor bot
+Allowed:
+- write execution feedback
+- write order lifecycle events
+- write exit result records
+- read active package and context
+Denied:
+- altering research data
+- changing canonical OHLCV
+
+Type D — Platform admin tool
+Allowed:
+- maintenance endpoints
+- repair tasks
+- rebuild tasks
+Restricted to operator credentials only
+
+
+============================================================
+SECTION 6 — PYTHON SDK CONTRACT
+============================================================
+SDK package name:
+- idp_client
+
+Required methods:
+1. get_health()
+2. get_market_snapshot(symbol, timeframe)
+3. get_regime_snapshot(symbol, timeframe)
+4. get_active_package(symbol, timeframe)
+5. get_trade_context(symbol, timeframe, candidate_payload)
+6. get_similar_cases(symbol, timeframe, query_payload, top_k)
+7. get_label_summary(symbol, timeframe)
+8. get_weekly_intelligence(symbol)
+9. write_trade_feedback(feedback_payload)
+10. write_order_event(event_payload)
+11. write_exit_feedback(exit_payload)
+
+SDK response rules:
+- deterministic JSON-like dict output
+- strict versioned schema
+- no exposure of internal table names
+- no file-path exposure
+- no raw storage handle exposure
+
+SDK config:
+- mode=sdk or http
+- base_url optional
+- api_key optional
+- timeout_ms
+- retry_count
+- cache_ttl_seconds
+
+SDK fallback logic:
+1. try local in-process access adapter
+2. if unavailable, try HTTP endpoint
+3. if read-only endpoint unavailable, return cached last-good snapshot if within TTL
+4. for write actions, fail closed and log retry queue
+
+
+============================================================
+SECTION 7 — HTTP API CONTRACT
+============================================================
+Base path:
+- /api/v1
+
+Core endpoints:
+GET  /health
+GET  /health/ready
+GET  /market/snapshot
+GET  /regime/snapshot
+GET  /packages/active
+POST /signals/context
+POST /memory/similar-cases
+GET  /labels/summary
+GET  /intelligence/weekly
+POST /feedback/trade
+POST /feedback/order-event
+POST /feedback/exit
+
+Operator endpoints:
+POST /ops/rebuild-impacted-timeframes
+POST /ops/recompute-package-registry
+POST /ops/reindex-memory
+POST /ops/run-weekly-pipeline
+GET  /ops/run-status
+
+API rules:
+- all bot-facing payloads are versioned
+- all responses include schema_version
+- all write requests require idempotency_key
+- all writes append to event log first
+- API never exposes raw tables or local file paths
+
+
+============================================================
+SECTION 8 — PAYLOAD MINIMUMS
+============================================================
+A. trade context request
+Must include:
+- symbol
+- timeframe
+- candidate_timestamp_utc
+- side_candidate
+- candidate_features
+- market_snapshot_hash
+
+B. similar cases request
+Must include:
+- symbol
+- timeframe
+- regime hints
+- candidate vector or candidate feature summary
+- top_k
+
+C. trade feedback write
+Must include:
+- event_id
+- order_ticket
+- symbol
+- timeframe
+- strategy_package_id
+- entry_price
+- sl
+- tp
+- rr
+- llm_decision
+- engine_decision
+- execution_status
+- event_timestamp_utc
+
+D. exit feedback write
+Must include:
+- event_id
+- order_ticket
+- exit_price
+- exit_reason
+- pnl_r
+- pnl_currency optional
+- holding_seconds
+- exit_timestamp_utc
+
+
+============================================================
+SECTION 9 — AUTHENTICATION MODEL
+============================================================
+Production authentication standard:
+- API key for bot-to-platform authentication
+- per-bot identity
+- role-based authorization
+- optional local allowlist for same-host SDK usage
+
+Rules:
+- every bot gets unique bot_id
+- every bot gets role class
+- read-only bot cannot write
+- feedback writer cannot use operator endpoints
+- operator endpoints require elevated key
+
+Recommended fields:
+- bot_id
+- api_key_hash
+- role
+- status
+- allowed_symbols
+- allowed_timeframes
+- created_at_utc
+- revoked_at_utc nullable
+
+
+============================================================
+SECTION 10 — LATENCY MODEL
+============================================================
+Latency targets:
+- get_health: < 20 ms local
+- get_market_snapshot: < 50 ms local cached path
+- get_active_package: < 50 ms local cached path
+- get_trade_context: < 120 ms local normal path
+- get_similar_cases: < 200 ms local retrieval path
+- write_trade_feedback: acknowledgement < 100 ms append-log mode
+
+Rules:
+- bot-facing reads should come from published/materialized views or cache
+- no heavy ad hoc query on hot path
+- no direct scan of large historical tables in bot request path
+- no synchronous reranking over large archives inside hot execution path
+
+
+============================================================
+SECTION 11 — CACHING POLICY
+============================================================
+Use 3 cache classes:
+
+Class 1 — very hot cache
+Examples:
+- health
+- active package id
+- current regime snapshot
+TTL:
+- 1 to 5 seconds
+
+Class 2 — hot cache
+Examples:
+- trade context base components
+- label summary
+- market snapshot bundle
+TTL:
+- 5 to 30 seconds
+
+Class 3 — warm cache
+Examples:
+- weekly intelligence snapshot
+- package comparison summaries
+- historical distribution summaries
+TTL:
+- 5 minutes to 1 hour
+
+Rules:
+- cache only published objects
+- cache keys must include symbol/timeframe/schema_version
+- feedback writes must invalidate affected hot keys when necessary
+- stale-if-error is allowed only for read-only endpoints
+
+
+============================================================
+SECTION 12 — FAILOVER RULES
+============================================================
+Read path failover:
+1. primary SDK adapter
+2. local HTTP endpoint
+3. cached published snapshot if freshness acceptable
+4. fail closed for trading decision if required critical context unavailable
+
+Write path failover:
+1. append to local durable retry queue
+2. retry background submit
+3. mark feedback as pending_delivery
+4. never drop acknowledged execution event silently
+
+Trading safety rule:
+If bot cannot retrieve required active package or trade context freshness exceeds threshold, do not place new trade.
+
+Monitoring safety rule:
+If feedback write fails, trading may continue only if local durable queue is healthy.
+
+
+============================================================
+SECTION 13 — DATA FRESHNESS RULES
+============================================================
+Critical objects:
+- market snapshot
+- regime snapshot
+- active package
+- candidate context
+
+Freshness policy:
+- every response includes produced_at_utc
+- every response includes freshness_seconds
+- every response includes source_run_id or snapshot_id
+
+Bot rule:
+- reject stale critical objects beyond configured threshold
+- read-only dashboard may display stale with warning banner
+- execution bot must fail safe on stale critical context
+
+
+============================================================
+SECTION 14 — EVENT DELIVERY MODEL
+============================================================
+All writes are event-based and idempotent.
+
+Required write properties:
+- idempotency_key
+- producer_bot_id
+- produced_at_utc
+- event_type
+- payload_hash
+- schema_version
+
+Write handling:
+1. validate request schema
+2. check idempotency registry
+3. append event log
+4. async materialize to downstream tables
+5. return acknowledgement
+
+This prevents duplication and keeps bot write path fast.
+
+
+============================================================
+SECTION 15 — MULTI-BOT SCALING MODEL
+============================================================
+Future bot expansion is expected.
+Therefore, design for:
+- many readers
+- few writers
+- one source of truth
+- published views only
+
+Recommended deployment shapes:
+Shape 1: single machine
+- platform service + duckdb + qdrant + bots on same host
+Use SDK-first access
+
+Shape 2: small LAN production
+- platform service central host
+- bots on separate workers
+Use HTTP-first access
+
+Shape 3: expanded production
+- platform API instances behind reverse proxy
+- shared published storage
+- qdrant service separated
+Use HTTP + retrieval service
+
+
+============================================================
+SECTION 16 — SIMPLEST PRODUCTION CONFIG
+============================================================
+Minimal bot config standard:
+- DATA_PLATFORM_MODE=sdk|http
+- DATA_PLATFORM_BASE_URL=http://127.0.0.1:8080
+- DATA_PLATFORM_API_KEY=...
+- DATA_PLATFORM_TIMEOUT_MS=500
+- DATA_PLATFORM_CACHE_TTL=10
+
+Optional:
+- DATA_PLATFORM_REQUIRED_FRESHNESS_SECONDS=15
+- DATA_PLATFORM_RETRY_COUNT=2
+- DATA_PLATFORM_WRITE_QUEUE_PATH=runtime/write_queue
+
+Rule:
+This is the only bot-side integration config surface.
+No bot should configure internal storage paths.
+
+
+============================================================
+SECTION 17 — WHAT IS FINALIZED IN THIS VERSION
+============================================================
+Frozen in v1.9.0:
+- platform access standard
+- SDK-first plus HTTP-facade model
+- no direct storage access for bots
+- role-based access classes
+- event-based idempotent writes
+- cache classes
+- failover rules
+- freshness rules
+- multi-bot scaling direction
+- minimal production config
+
+Not yet frozen in v1.9.0:
+- exact SDK code
+- exact FastAPI route implementation
+- exact SQL DDL
+- exact retry queue code
+- exact Qdrant collection schemas
+- exact dashboard payload shape
+
+Conclusion:
+This version is final enough to begin implementation without architecture churn.
+
+
+============================================================
+SECTION 18 — PROGRESSION CHECKLIST
+============================================================
+[ ] A8 finalized and approved
+[ ] SDK method list frozen
+[ ] HTTP endpoint list frozen
+[ ] auth model frozen
+[ ] caching policy frozen
+[ ] failover policy frozen
+[ ] freshness contract frozen
+[ ] bot permission classes frozen
+[ ] write event model frozen
+[ ] production config surface frozen
+[ ] move to A9 registry SQL + dependency map
+
+
+============================================================
+SECTION 19 — STEP UPDATE TEMPLATE
+============================================================
+STEP_ID:
+DATE_UTC:
+PHASE: A8
+VERSION: v1.9.0
+STATUS: PASS / PARTIAL / FAIL
+OBJECTIVE:
+RESULT:
+DECISION_LOCKED:
+FILES_AFFECTED:
+RISKS:
+NEXT_STEP:
+
+
+============================================================
+SECTION 20 — STRATEGY / LOGIC USE RECORD TEMPLATE
+============================================================
+RECORD_ID:
+DATE_UTC:
+PACKAGE_ID:
+TIMEFRAME:
+MARKET_REGIME:
+ENTRY_LOGIC_USED:
+MICRO_EXIT_USED:
+FILTERS_USED:
+CONTEXT_SOURCE:
+SIMILAR_CASE_SOURCE:
+LLM_ROLE:
+PYTHON_ENGINE_ROLE:
+ENTRY_DECISION_RESULT:
+EXIT_DECISION_RESULT:
+NOTES:

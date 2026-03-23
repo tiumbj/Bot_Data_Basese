@@ -1,0 +1,104 @@
+{
+  "version": "v1.0.0",
+  "symbol": "XAUUSD",
+  "input_file": "C:\\Data\\Bot\\Local_LLM\\M1_XAUUSD\\XAUUSD_M1_ALL.csv",
+  "output_root": "C:\\Data\\Bot\\Local_LLM\\dataset",
+  "timeframes": [
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M1",
+      "rows": 5950512,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:58:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M1.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M2",
+      "rows": 2991664,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:58:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M2.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M3",
+      "rows": 1997261,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:57:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M3.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M4",
+      "rows": 1498656,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:56:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M4.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M5",
+      "rows": 1199673,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:55:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M5.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M6",
+      "rows": 1000034,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:54:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M6.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M10",
+      "rows": 600702,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:50:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M10.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M15",
+      "rows": 400971,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:45:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M15.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "M30",
+      "rows": 201029,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:30:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_M30.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "H1",
+      "rows": 101113,
+      "first_datetime": "2009-03-15 17:00:00",
+      "last_datetime": "2026-03-13 15:00:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_H1.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "H4",
+      "rows": 27153,
+      "first_datetime": "2009-03-15 16:00:00",
+      "last_datetime": "2026-03-13 12:00:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_H4.csv"
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "D1",
+      "rows": 5290,
+      "first_datetime": "2009-03-15 00:00:00",
+      "last_datetime": "2026-03-13 00:00:00",
+      "output_file": "C:\\Data\\Bot\\Local_LLM\\dataset\\tf\\XAUUSD_D1.csv"
+    }
+  ]
+}

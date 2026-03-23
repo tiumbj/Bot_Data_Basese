@@ -1,0 +1,906 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform - Phase A14 YAML Schema Validation and Loader Spec
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a14_yaml_loader_validation_spec_v2_5_0.txt
+# เวอร์ชัน: v2.5.0
+# ============================================================
+
+TITLE:
+Intelligent Database Platform - Phase A14 YAML Schema Validation and Loader Spec
+
+VERSION:
+v2.5.0
+
+STATUS:
+LOCKED DESIGN SPEC FOR IMPLEMENTATION PREP
+
+PURPOSE:
+กำหนดมาตรฐานการ validate, load, verify, cache, reload, และ test ของ YAML registries
+ที่ใช้ใน bridge layer เพื่อให้ parser/matcher/resolver ทำงานแบบ production-safe, deterministic,
+เร็ว, และไม่สะดุดเมื่อมีหลาย bot ใช้งาน platform กลางพร้อมกัน
+
+SCOPE:
+เอกสารนี้ครอบคลุมเฉพาะ registry YAML ของ bridge layer:
+1. bridge_file_patterns.yaml
+2. metric_alias_registry.yaml
+3. strategy_alias_registry.yaml
+4. timeframe_registry.yaml
+5. artifact_type_registry.yaml
+6. bridge_registry_manifest.yaml
+
+OUT OF SCOPE:
+1. parser implementation code จริง
+2. DuckDB schema migration code
+3. FastAPI endpoint implementation
+4. Qdrant collection implementation
+5. backtest kernel implementation
+
+PRIMARY GOAL:
+ทำให้ YAML registries เป็น source of truth ที่:
+- validate ได้ก่อนใช้งาน
+- load ได้แบบ deterministic
+- fail-fast เมื่อผิดสัญญา
+- รองรับ hot-reload แบบปลอดภัย
+- test regression ได้ทุกครั้งก่อน deploy
+
+DESIGN DECISION:
+ให้ใช้หลัก:
+- YAML = human-editable config source
+- Pydantic models = runtime schema contract
+- content checksum = immutable registry version fingerprint
+- manifest-first loading = deterministic orchestration
+- atomic activation = ไม่เปลี่ยน registry ครึ่งชุดระหว่างระบบกำลังอ่าน
+
+============================================================
+1) FINAL DECISION FOR THIS VERSION
+============================================================
+
+LOCK FOR v2.5.0:
+1. Registry YAML ทุกไฟล์ต้องถูก validate ด้วย schema model ก่อนใช้งาน
+2. Loader ต้องโหลดผ่าน manifest เสมอ
+3. Loader ต้องมี checksum verification ทุกไฟล์
+4. Loader ต้องเป็น fail-fast ถ้า registry required ใดไม่ผ่าน
+5. Runtime ต้องใช้ active immutable registry snapshot
+6. Hot reload ต้องเป็น staged -> validated -> activated เท่านั้น
+7. ถ้า reload fail ระบบต้อง keep active snapshot เดิม
+8. Bot และ service layer ห้ามอ่าน YAML ตรง ต้องอ่านผ่าน registry service/cache เท่านั้น
+
+RATIONALE:
+ถ้าปล่อยให้แต่ละ service อ่าน YAML ตรง จะเกิด:
+- inconsistent state
+- parsing behavior ไม่เหมือนกัน
+- schema drift
+- path/config chaos
+- runtime fail ระหว่าง deploy
+
+ดังนั้นต้องมี registry loader กลางตัวเดียว
+
+============================================================
+2) TARGET DIRECTORY STRUCTURE
+============================================================
+
+RECOMMENDED PATHS:
+
+C:\Data\Bot\Local_LLM\gold_research\
+└── intelligent_db_platform\
+    ├── config\
+    │   ├── bridge\
+    │   │   ├── bridge_registry_manifest.yaml
+    │   │   ├── bridge_file_patterns.yaml
+    │   │   ├── metric_alias_registry.yaml
+    │   │   ├── strategy_alias_registry.yaml
+    │   │   ├── timeframe_registry.yaml
+    │   │   └── artifact_type_registry.yaml
+    │   └── settings.yaml
+    ├── runtime\
+    │   ├── registry_cache\
+    │   │   ├── active\
+    │   │   ├── staging\
+    │   │   ├── failed\
+    │   │   └── history\
+    │   └── locks\
+    ├── logs\
+    │   └── registry_loader\
+    ├── src\
+    │   └── intelligent_db_platform\
+    │       ├── registry\
+    │       │   ├── yaml_models.py
+    │       │   ├── yaml_loader.py
+    │       │   ├── yaml_validator.py
+    │       │   ├── checksum.py
+    │       │   ├── activation.py
+    │       │   ├── reload_manager.py
+    │       │   └── registry_service.py
+    │       └── tests\
+    │           └── registry\
+
+RULE:
+active registry state ต้องถูก materialize ลง runtime/registry_cache/active
+เพื่อให้ service อ่าน state เดียวกันทุก process
+
+============================================================
+3) YAML SOURCE-OF-TRUTH MODEL
+============================================================
+
+RULE:
+ไฟล์ YAML ต้นฉบับอยู่ใน config/bridge เท่านั้น
+
+SEPARATION:
+1. config/bridge = source config ที่แก้ด้วยมือ
+2. runtime/registry_cache/staging = output ของ pre-activation validation
+3. runtime/registry_cache/active = snapshot ที่ service ใช้งานจริง
+4. runtime/registry_cache/failed = snapshot ที่ validate/reload ไม่ผ่าน
+5. runtime/registry_cache/history = สำเนาย้อนหลังของ activated snapshots
+
+WHY:
+ช่วยแยก:
+- source files
+- validated runtime snapshot
+- rollback history
+ออกจากกันอย่างชัดเจน
+
+============================================================
+4) MANIFEST-FIRST LOADING CONTRACT
+============================================================
+
+LOADER ENTRYPOINT:
+bridge_registry_manifest.yaml เป็นไฟล์แรกที่ต้องโหลด
+
+MANIFEST MUST CONTAIN:
+1. manifest_version
+2. registry_bundle_id
+3. bundle_semver
+4. generated_at_utc
+5. required_registries
+6. optional_registries
+7. load_order
+8. file_checksums
+9. schema_versions
+10. activation_policy
+11. hot_reload_policy
+12. rollback_policy
+
+LOAD ORDER MUST BE:
+1. bridge_registry_manifest.yaml
+2. timeframe_registry.yaml
+3. artifact_type_registry.yaml
+4. metric_alias_registry.yaml
+5. strategy_alias_registry.yaml
+6. bridge_file_patterns.yaml
+
+WHY THIS ORDER:
+- timeframe/artifact registries เป็นฐานอ้างอิง
+- metric/strategy alias registries พึ่ง canonical identifiers
+- file patterns พึ่ง alias registries และ artifact registry
+
+FAIL RULE:
+ถ้า manifest ไม่ผ่าน schema:
+- stop loading ทันที
+- mark load as FAILED_MANIFEST_SCHEMA
+- ห้ามใช้ registry snapshot ชุดนั้น
+
+============================================================
+5) SCHEMA VALIDATION STRATEGY
+============================================================
+
+PRIMARY VALIDATOR:
+Pydantic models ต่อ YAML แต่ละไฟล์
+
+VALIDATION LEVELS:
+L1. File existence validation
+L2. YAML parse validation
+L3. Pydantic schema validation
+L4. Cross-file reference validation
+L5. Semantic rule validation
+L6. Conflict/overlap validation
+L7. Activation readiness validation
+
+DETAIL:
+L1 File existence validation
+- required files ต้องมีครบ
+- path ต้องตรง manifest
+- duplicate filename not allowed
+
+L2 YAML parse validation
+- parse ได้จริง
+- no duplicate keys
+- no invalid scalar/type issue
+
+L3 Pydantic schema validation
+- field types ถูก
+- required field มีครบ
+- enum values ถูก
+- regex fields ถูก format
+
+L4 Cross-file reference validation
+- strategy alias ต้อง map ไป canonical strategy ที่มีอยู่
+- timeframe alias ต้อง map ไป canonical timeframe ที่ valid
+- file pattern artifact_type ต้องอยู่ใน artifact registry
+- metrics aliases ต้อง map ไป canonical metric names เท่านั้น
+
+L5 Semantic rule validation
+- priority ต้องไม่ติดลบ
+- alias list ห้ามว่างถ้า registry ประเภทนั้น require alias
+- canonical ids ต้อง lowercase_snake_case หรือ spec format เดียวกัน
+- timeframe minute_value ต้องสอดคล้องกับ label เช่น M15=15, H1=60
+
+L6 Conflict/overlap validation
+- pattern overlap ที่ทำให้ ambiguity สูงต้อง fail หรือ quarantine
+- alias ซ้ำแบบคนละ canonical target ต้อง fail
+- metric alias เดียว map ไปหลาย canonical metrics ไม่ได้
+- timeframe alias ซ้ำแบบขัดกันไม่ได้
+
+L7 Activation readiness validation
+- required registry loaded ครบ
+- checksum pass
+- cross references pass
+- zero fatal errors
+- snapshot assembled ได้ครบ
+
+============================================================
+6) REQUIRED PYDANTIC MODEL SET
+============================================================
+
+FILE:
+src/intelligent_db_platform/registry/yaml_models.py
+
+REQUIRED MODELS:
+1. ManifestModel
+2. TimeframeRegistryModel
+3. TimeframeEntryModel
+4. ArtifactTypeRegistryModel
+5. ArtifactTypeEntryModel
+6. MetricAliasRegistryModel
+7. MetricAliasEntryModel
+8. StrategyAliasRegistryModel
+9. StrategyAliasEntryModel
+10. BridgeFilePatternRegistryModel
+11. BridgeFilePatternEntryModel
+12. FilePatternExtractRuleModel
+13. ActivationPolicyModel
+14. HotReloadPolicyModel
+15. RollbackPolicyModel
+16. RegistryChecksumEntryModel
+
+STRICT RULES:
+- extra fields = forbid
+- enums explicit
+- string whitespace trimmed
+- ids normalized before final acceptance
+- duplicate list values forbidden
+- blank string forbidden where identity field
+
+============================================================
+7) CHECKSUM POLICY
+============================================================
+
+ALGORITHM:
+SHA-256
+
+CHECKSUM UNIT:
+byte content ของไฟล์ YAML หลังอ่านแบบ UTF-8 exact bytes
+
+RULE:
+manifest ต้องเก็บ checksum ของทุก registry file
+
+VERIFICATION:
+1. read file bytes
+2. compute sha256
+3. compare กับ manifest
+4. ถ้า mismatch:
+   - fail load
+   - mark FAILED_CHECKSUM_MISMATCH
+   - move snapshot ไป failed
+   - keep active snapshot เดิม
+
+OPTIONAL EXTRA:
+สามารถเก็บ normalized-content checksum เพิ่มได้ภายหลัง
+แต่ v2.5.0 ให้ exact file bytes เป็นตัวหลักก่อน
+
+WHY:
+simple, deterministic, cheap, production-safe
+
+============================================================
+8) FAIL-FAST POLICY
+============================================================
+
+FATAL CONDITIONS:
+1. manifest parse fail
+2. missing required registry
+3. checksum mismatch
+4. schema validation fail ใน required registry
+5. cross-file reference fail
+6. duplicate canonical id conflict
+7. ambiguous pattern overlap ที่ priority แก้ไม่ได้
+8. activation snapshot build fail
+
+ON FATAL:
+- abort current load
+- do not touch current active snapshot
+- write failure report
+- move staging bundle ไป failed
+- emit log + registry_load_event
+
+NON-FATAL CONDITIONS:
+1. deprecated alias warning
+2. unused optional field warning
+3. redundant alias warning
+4. unreachable pattern warning
+5. stale optional registry warning
+
+ON NON-FATAL:
+- activation allowed
+- warnings recorded in snapshot metadata
+
+============================================================
+9) STAGING -> VALIDATE -> ACTIVATE FLOW
+============================================================
+
+STEP-BY-STEP:
+
+STEP 1
+อ่าน source YAML จาก config/bridge
+
+STEP 2
+copy source bundle เข้า runtime/registry_cache/staging/<bundle_id>
+
+STEP 3
+parse manifest และ validate manifest
+
+STEP 4
+verify checksums
+
+STEP 5
+validate required registries ทีละไฟล์ตาม load order
+
+STEP 6
+run cross-file semantic validation
+
+STEP 7
+build immutable registry snapshot object
+
+STEP 8
+serialize validated snapshot metadata ลง staging
+
+STEP 9
+run activation readiness checks
+
+STEP 10
+atomic switch:
+- previous active -> history
+- staging validated snapshot -> active
+- update active pointer file
+
+STEP 11
+emit REGISTRY_ACTIVATED event
+
+IMPORTANT:
+activation ต้องเป็น atomic operation
+ห้ามเปลี่ยนทีละไฟล์ใน active directory เพราะจะทำให้ runtime อ่าน snapshot ครึ่งชุด
+
+============================================================
+10) ACTIVE SNAPSHOT CONTRACT
+============================================================
+
+ACTIVE SNAPSHOT MUST CONTAIN:
+1. bundle_id
+2. bundle_semver
+3. activated_at_utc
+4. manifest_checksum
+5. registry_checksums
+6. warning_count
+7. fatal_error_count
+8. source_paths
+9. normalized_registry_metadata.json
+10. activation_report.json
+
+RUNTIME RULE:
+service layer โหลดจาก active snapshot เท่านั้น
+
+CACHE RULE:
+registry_service เก็บ in-memory immutable object ต่อ process
+แต่ต้อง reload จาก active snapshot เมื่อตรวจเจอ active pointer เปลี่ยน
+
+============================================================
+11) HOT-RELOAD POLICY
+============================================================
+
+DEFAULT DECISION:
+รองรับ hot reload แต่ต้องเป็น controlled reload เท่านั้น
+
+TRIGGERS:
+1. manual command
+2. operator action
+3. scheduled reload
+4. CI/CD deploy hook
+
+NOT ALLOWED:
+- auto-reload ทุก file change ทันที
+- partial reload เฉพาะบาง registry โดยไม่ build ทั้ง bundle
+
+HOT-RELOAD RULE:
+1. reload เป็น bundle-level only
+2. validate ครบทุกไฟล์ก่อน activate
+3. active snapshot เก่ายังคงใช้งานจน activation ใหม่สำเร็จ
+4. ถ้า reload fail ให้ rollback อัตโนมัติเป็น no-op ต่อ active snapshot เดิม
+
+WHY:
+partial reload เป็นแหล่งของ inconsistent behavior มากที่สุด
+
+============================================================
+12) ROLLBACK POLICY
+============================================================
+
+ROLLBACK TRIGGERS:
+1. activation fail
+2. post-activation smoke test fail
+3. runtime incompatibility detected
+4. operator emergency rollback
+
+ROLLBACK METHOD:
+- pointer-based rollback
+- เปลี่ยน active pointer กลับไปยัง snapshot ล่าสุดที่ stable
+- ห้าม regenerate snapshot ตอน rollback
+
+ROLLBACK REQUIREMENTS:
+1. history ต้องเก็บอย่างน้อย 20 activated bundles
+2. ทุก history entry ต้องมี activation_report
+3. rollback action ต้อง emit REGISTRY_ROLLBACK event
+4. rollback reason ต้องถูกบันทึกเสมอ
+
+============================================================
+13) CROSS-FILE REFERENCE RULES
+============================================================
+
+RULE SET:
+
+A. bridge_file_patterns.yaml
+- artifact_type ต้องมีใน artifact_type_registry
+- timeframe_aliases ต้อง resolve ได้ใน timeframe_registry
+- strategy_alias_rules ต้อง resolve ได้ใน strategy_alias_registry
+- metric_alias_rules ต้อง resolve ได้ใน metric_alias_registry
+
+B. strategy_alias_registry.yaml
+- canonical_strategy_id ต้อง unique
+- alias ห้ามซ้ำข้าม canonical ids
+- deprecated_alias allowed but must point to same canonical id
+
+C. metric_alias_registry.yaml
+- canonical_metric_name ต้อง unique
+- alias ห้ามซ้ำข้าม canonical metrics
+- unit/category enum ต้อง valid
+
+D. timeframe_registry.yaml
+- canonical_timeframe ต้อง unique
+- minute_value ต้อง unique
+- alias ห้ามซ้ำข้าม timeframe
+
+E. artifact_type_registry.yaml
+- artifact_type_id ต้อง unique
+- artifact class enum ต้อง valid
+
+============================================================
+14) OVERLAP AND AMBIGUITY POLICY
+============================================================
+
+FILE PATTERN OVERLAP:
+ต้องตรวจว่า pattern สองตัวจับชื่อไฟล์กลุ่มเดียวกันแล้วให้คนละ artifact meaning หรือไม่
+
+RESOLUTION RULE:
+1. exact pattern specificity ชนะ broad pattern
+2. higher priority ชนะ lower priority
+3. ถ้ายังเสมอ = fatal ambiguity
+
+ALIAS AMBIGUITY:
+ถ้า alias เดียวไปได้หลาย canonical target:
+- required registry = fatal
+- optional extension registry = quarantine
+
+METRIC COLLISION:
+เช่น:
+- "winrate"
+- "win_rate"
+- "wr"
+ทั้งหมด map ไป canonical เดียวได้
+แต่ห้าม alias เดียว map ไปทั้ง "win_rate_pct" และ "win_count"
+
+============================================================
+15) REGISTRY SERVICE CONTRACT
+============================================================
+
+FILE:
+src/intelligent_db_platform/registry/registry_service.py
+
+RESPONSIBILITIES:
+1. expose active immutable snapshot
+2. resolve timeframe aliases
+3. resolve strategy aliases
+4. resolve metric aliases
+5. match bridge file patterns
+6. publish snapshot metadata
+7. answer health/status queries
+
+RULE:
+service methods ต้อง pure-read ต่อ active snapshot
+ห้าม mutate source YAML ระหว่าง runtime
+
+RECOMMENDED METHODS:
+- get_active_bundle_info()
+- resolve_timeframe(alias: str)
+- resolve_strategy(alias: str)
+- resolve_metric(alias: str)
+- match_artifact(path_or_name: str)
+- get_registry_health()
+- reload_bundle()
+- rollback_bundle(bundle_id: str)
+
+============================================================
+16) REGISTRY HEALTH MODEL
+============================================================
+
+HEALTH STATES:
+1. HEALTHY
+2. HEALTHY_WITH_WARNINGS
+3. DEGRADED
+4. FAILED
+
+CONDITION EXAMPLES:
+HEALTHY
+- active snapshot loaded
+- no fatal
+- zero or low warnings
+
+HEALTHY_WITH_WARNINGS
+- active snapshot loaded
+- warnings present
+- runtime usable
+
+DEGRADED
+- active snapshot old/stale
+- last reload failed
+- fallback active still usable
+
+FAILED
+- no active snapshot at startup
+- registry service boot failed
+- cannot resolve required registries
+
+SERVICE RULE:
+bot-facing API ควรยังตอบได้ถ้า state = DEGRADED
+แต่ถ้า FAILED ต้อง block decision paths ที่ต้องพึ่ง registry
+
+============================================================
+17) STARTUP POLICY
+============================================================
+
+STARTUP ORDER:
+1. load settings
+2. initialize logger
+3. start registry loader
+4. verify active snapshot exists
+5. if no active snapshot:
+   - try full load from source bundle
+6. if load success:
+   - boot services
+7. if load fail and no previous active snapshot:
+   - startup fail hard
+8. if load fail but previous active snapshot exists:
+   - boot in DEGRADED mode with active snapshot เดิม
+
+WHY:
+production ต้องไม่สะดุดเพราะ source YAML ใหม่เสีย
+ถ้ายังมี active snapshot เดิม ระบบควรเดินต่อได้
+
+============================================================
+18) TEST STRATEGY
+============================================================
+
+REQUIRED TEST GROUPS:
+
+A. UNIT TESTS
+1. yaml parse tests
+2. pydantic schema tests
+3. alias normalization tests
+4. checksum tests
+5. overlap detection tests
+6. activation pointer tests
+
+B. INTEGRATION TESTS
+1. manifest-first load success
+2. missing required registry fail
+3. checksum mismatch fail
+4. ambiguous alias fail
+5. hot reload success
+6. hot reload fail keeps old active snapshot
+7. rollback success
+8. startup with previous active snapshot after failed reload
+
+C. REGRESSION TESTS
+1. legacy bundle still loads
+2. old alias still resolves
+3. expected artifact patterns still match
+4. no breaking change ต่อ existing canonical IDs
+
+D. SMOKE TESTS
+1. registry health endpoint
+2. one strategy alias resolve
+3. one timeframe alias resolve
+4. one metric alias resolve
+5. one file pattern match
+
+============================================================
+19) VERSIONING POLICY
+============================================================
+
+SEMVER RULE:
+bundle_semver ใช้ semantic versioning
+
+MAJOR:
+breaking registry contract
+
+MINOR:
+new additive aliases/patterns/optional fields
+
+PATCH:
+fix typo/checksum/documentation/priority adjustment without breaking interface
+
+RULE:
+canonical ids ที่ publish แล้ว ห้ามเปลี่ยนชื่อแบบ breaking ใน patch/minor
+ถ้าจำเป็นต้องเปลี่ยน:
+- เพิ่ม deprecated alias
+- ทำ migration note
+- เลื่อนเป็น major
+
+============================================================
+20) HOT-RELOAD SAFETY LIMITS
+============================================================
+
+DO NOT HOT-RELOAD:
+1. registry bundle ที่ยังไม่ผ่าน CI tests
+2. registry bundle ที่ checksum manifest ไม่ตรง
+3. registry bundle ที่เพิ่ม breaking canonical id changes โดยไม่มี major version
+4. registry bundle ที่มี fatal ambiguity
+5. registry bundle ที่ไม่มี history backup
+
+ALLOWED HOT-RELOAD WINDOW:
+- operator initiated
+- scheduled low-risk window
+- CI deploy with pre-activation smoke tests
+
+============================================================
+21) LOGGING AND AUDIT
+============================================================
+
+LOG FILES:
+logs/registry_loader/registry_loader.jsonl
+logs/registry_loader/activation.jsonl
+logs/registry_loader/reload.jsonl
+
+REQUIRED FIELDS:
+- ts_utc
+- event_type
+- bundle_id
+- bundle_semver
+- phase
+- status
+- warning_count
+- fatal_count
+- active_bundle_before
+- active_bundle_after
+- reason_code
+- checksum_summary
+- operator
+- host
+
+EVENT TYPES:
+- REGISTRY_LOAD_STARTED
+- REGISTRY_LOAD_FAILED
+- REGISTRY_VALIDATED
+- REGISTRY_ACTIVATED
+- REGISTRY_RELOAD_STARTED
+- REGISTRY_RELOAD_FAILED
+- REGISTRY_ROLLBACK
+- REGISTRY_HEALTH_CHANGED
+
+============================================================
+22) PRODUCTION ACCESS RULE
+============================================================
+
+RULE:
+bot ทุกตัวต้องเข้าถึง registry ผ่าน:
+1. Python SDK
+หรือ
+2. FastAPI registry facade
+
+BOT MUST NOT:
+- open YAML files directly
+- parse alias filesเอง
+- maintain local shadow registry
+- override canonical ids locally
+
+WHY:
+ต้องมี contract กลางเดียว ไม่งั้น production จะ drift
+
+============================================================
+23) MINIMAL IMPLEMENTATION FILE SET
+============================================================
+
+REQUIRED FILES TO BUILD NEXT:
+1. src/intelligent_db_platform/registry/yaml_models.py
+2. src/intelligent_db_platform/registry/yaml_validator.py
+3. src/intelligent_db_platform/registry/checksum.py
+4. src/intelligent_db_platform/registry/yaml_loader.py
+5. src/intelligent_db_platform/registry/activation.py
+6. src/intelligent_db_platform/registry/reload_manager.py
+7. src/intelligent_db_platform/registry/registry_service.py
+8. tests/registry/test_yaml_models.py
+9. tests/registry/test_yaml_loader.py
+10. tests/registry/test_reload_manager.py
+
+============================================================
+24) BUILD ORDER
+============================================================
+
+STEP 1
+yaml_models.py
+
+STEP 2
+checksum.py
+
+STEP 3
+yaml_validator.py
+
+STEP 4
+yaml_loader.py
+
+STEP 5
+activation.py
+
+STEP 6
+reload_manager.py
+
+STEP 7
+registry_service.py
+
+STEP 8
+unit tests
+
+STEP 9
+integration tests
+
+STEP 10
+startup smoke test
+
+============================================================
+25) PROGRESSION CHECKLIST
+============================================================
+
+[LOCKED] A1 master platform split
+[LOCKED] A2 platform design
+[LOCKED] A3 technical spec
+[LOCKED] A4 manifest and contract
+[LOCKED] A5 free contract suite
+[LOCKED] A6 Pandera schema thresholds
+[LOCKED] A7 implementation code spec
+[LOCKED] A8 access architecture
+[LOCKED] A9 registry schema SQL spec
+[LOCKED] A10 code skeleton
+[LOCKED] A11 migration bridge spec
+[LOCKED] A12 bridge file pattern registry
+[LOCKED] A13 bridge YAML contract
+[LOCKED] A14 YAML schema validation and loader spec
+[NEXT] A15 code implementation blueprint for registry loader modules
+
+============================================================
+26) STEP UPDATE TEMPLATE
+============================================================
+
+STEP_UPDATE_TEMPLATE
+
+step_id:
+A14
+
+title:
+YAML Schema Validation and Loader Spec
+
+version:
+v2.5.0
+
+status:
+COMPLETED
+
+objective:
+Lock YAML validation, checksum verification, activation, hot-reload, rollback, and test policy for bridge registries.
+
+inputs_used:
+- A13 bridge YAML contract spec
+- A10 code skeleton spec
+- A8 access architecture spec
+
+decisions_made:
+- manifest-first loading
+- pydantic runtime schema models
+- sha256 checksum verification
+- staged activation only
+- no direct YAML access by bots
+- bundle-level hot reload only
+
+artifacts_defined:
+- yaml_models.py
+- yaml_validator.py
+- checksum.py
+- yaml_loader.py
+- activation.py
+- reload_manager.py
+- registry_service.py
+
+risks:
+- alias overlap in legacy outputs
+- pattern ambiguity
+- bad reload bundle causing degraded mode
+
+controls:
+- fail-fast on fatal errors
+- keep previous active snapshot
+- pointer-based rollback
+- regression tests before activation
+
+next_step:
+A15 code implementation blueprint
+
+============================================================
+27) STRATEGY / LOGIC USE RECORD TEMPLATE
+============================================================
+
+STRATEGY_LOGIC_USE_RECORD_TEMPLATE
+
+record_id:
+auto_generated
+
+phase:
+A14
+
+component:
+registry_loader
+
+logic_name:
+manifest_first_yaml_activation
+
+purpose:
+Ensure deterministic, validated, atomic registry activation for bridge layer.
+
+input_dependencies:
+- bridge_registry_manifest.yaml
+- registry YAML bundle
+- checksum verification
+- pydantic models
+
+decision_logic:
+- validate manifest first
+- validate required registries in load order
+- run cross-file semantic checks
+- build immutable snapshot
+- activate atomically
+- rollback on failure
+
+expected_benefit:
+- stable production behavior
+- safe hot reload
+- deterministic alias and pattern resolution
+- no partial config activation
+
+failure_modes:
+- missing required file
+- checksum mismatch
+- ambiguity conflict
+- startup with no active snapshot
+
+recovery_logic:
+- fail-fast
+- keep old active snapshot
+- move bad bundle to failed
+- rollback by pointer
+
+status:
+LOCKED_FOR_IMPLEMENTATION
+
+END OF DOCUMENT

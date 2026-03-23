@@ -1,0 +1,991 @@
+============================================================
+ชื่อเอกสาร: Intelligent Database Platform - Phase A2 Design
+ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a2_design_v1_3_0.txt
+เวอร์ชัน: v1.3.0
+============================================================
+
+PURPOSE
+เอกสารนี้คือแบบออกแบบ Phase A2 ของโปรเจกต์ Local_LLM/gold_research
+โดยแยก Intelligent Database Platform ออกจาก Bot Runtime Platform อย่างชัดเจน
+และกำหนดให้ Intelligent Database Platform เป็นระบบกลางแบบ standalone
+ที่สามารถ:
+- ingest ข้อมูลได้เอง
+- กันข้อมูลซ้ำได้เอง
+- สร้าง canonical dataset ได้เอง
+- run backtest ได้เอง
+- update labels ได้เอง
+- update case memory ได้เอง
+- update retrieval index ได้เอง
+- publish weekly intelligence ได้เอง
+- ให้ bot อื่น query/use ได้ตลอดเวลา
+
+============================================================
+1) PHASE A2 SCOPE
+============================================================
+
+เป้าหมายของ Phase A2 มี 6 เรื่องเท่านั้น
+
+A2.1 Canonical Ingest Pipeline
+- รับข้อมูล price/source เข้าระบบกลาง
+- normalize ให้เป็นรูปแบบเดียว
+- ทำให้ทุก downstream job ใช้ schema เดียวกัน
+
+A2.2 Duplicate Prevention
+- กันข้อมูลซ้ำตั้งแต่ source ingest
+- กันซ้ำอีกชั้นตอน append/update
+- เก็บ fingerprint/hash เพื่อ audit ได้
+
+A2.3 Multi-Timeframe Canonical Builder
+- ใช้ M1 เป็น source หลัก
+- สร้างทุก TF ที่ล็อกไว้แบบ deterministic
+- rebuild เฉพาะช่วงที่ได้รับผลกระทบได้
+
+A2.4 Weekly Intelligence Run
+- เมื่อกด run ระบบต้องทำรอบอัปเดตกลางทั้งชุด
+- เก็บผลลัพธ์, labels, memory, package registry, snapshot
+
+A2.5 Central Registry + Metadata
+- มี registry กลางคุม dataset, features, labels, packages, runs
+- version ทุกอย่าง
+- trace ได้ว่า bot ใช้ข้อมูลรุ่นไหน
+
+A2.6 Service Contract for Other Bots
+- bot ตัวอื่นเรียกใช้ข้อมูลกลางได้
+- ไม่ต้องสร้าง backtest/label/retrieval ซ้ำเอง
+
+============================================================
+2) LOCKED PRINCIPLES
+============================================================
+
+2.1 Single source of truth
+- Canonical M1 dataset เป็น source กลาง
+- ทุก TF downstream ต้อง derive จาก canonical M1 เท่านั้น
+
+2.2 Deterministic rebuild
+- ถ้าข้อมูลต้นทางเหมือนเดิม ต้องสร้าง output เดิมได้
+- ห้ามมี logic แบบสุ่มโดยไม่ล็อก seed
+
+2.3 Idempotent pipeline
+- กด run ซ้ำได้ โดยไม่ทำให้ข้อมูลเสีย
+- run ซ้ำแล้วไม่ควรเกิด duplicate rows/result pollution
+
+2.4 Central intelligence
+- labels, memory cases, strategy winners, regime summaries
+  ต้องเป็นทรัพย์สินกลางของ platform
+- bot ห้ามสร้างเวอร์ชันของตัวเองซ้ำ
+
+2.5 Auditability
+- ทุกการ ingest/build/backtest/label/update ต้อง trace ได้
+- ต้องตอบได้ว่า output นี้มาจาก input ชุดไหน + logic version ไหน
+
+2.6 Weekly evolution
+- ระบบต้องฉลาดขึ้นทุกสัปดาห์
+- หมายถึงมีการอัปเดต labels, retrieval memory, validation report,
+  package registry, failure pattern, regime mapping อย่างต่อเนื่อง
+
+============================================================
+3) STANDALONE ARCHITECTURE
+============================================================
+
+ระบบแยกเป็น 2 ส่วนใหญ่
+
+PART A: INTELLIGENT DATABASE PLATFORM
+หน้าที่:
+- market data ingest
+- canonical dataset build
+- feature store update
+- regime labeling
+- backtest execution
+- walk-forward validation
+- TP/SL surface research
+- strategy package registry
+- memory case build
+- retrieval index build
+- weekly intelligence publish
+
+PART B: BOT RUNTIME PLATFORM
+หน้าที่:
+- realtime market pull
+- candidate setup generation
+- call local LLM with retrieved context
+- final confirm
+- execution/risk enforcement
+- send order to MT5
+- monitor active positions
+- send trade outcomes back to platform
+
+หลักสำคัญ:
+Database Platform = knowledge factory
+Bot Runtime = execution client
+
+============================================================
+4) RECOMMENDED FOLDER STRUCTURE
+============================================================
+
+C:\Data\Bot\Local_LLM\gold_research\
+|
++--- platform\
+|    +--- configs\
+|    |    +--- platform_config.yaml
+|    |    +--- symbols.yaml
+|    |    +--- timeframes.yaml
+|    |    +--- storage_paths.yaml
+|    |
+|    +--- data_raw\
+|    |    +--- mt5_export\
+|    |    +--- histdata_import\
+|    |    +--- ingest_archive\
+|    |
+|    +--- data_canonical\
+|    |    +--- bars\
+|    |    |    +--- XAUUSD\
+|    |    |         +--- M1\
+|    |    |         +--- M2\
+|    |    |         +--- M3\
+|    |    |         +--- M4\
+|    |    |         +--- M5\
+|    |    |         +--- M6\
+|    |    |         +--- M10\
+|    |    |         +--- M15\
+|    |    |         +--- M30\
+|    |    |         +--- H1\
+|    |    |         +--- H4\
+|    |    |         +--- D1\
+|    |    |
+|    |    +--- manifests\
+|    |    +--- continuity_reports\
+|    |
+|    +--- feature_store\
+|    |    +--- timeframe_features\
+|    |    +--- regime_features\
+|    |    +--- quality_features\
+|    |
+|    +--- labels\
+|    |    +--- regime_labels\
+|    |    +--- trade_outcome_labels\
+|    |    +--- exit_labels\
+|    |    +--- transition_labels\
+|    |
+|    +--- research_runs\
+|    |    +--- entry_runs\
+|    |    +--- exit_runs\
+|    |    +--- tp_sl_surface_runs\
+|    |    +--- walkforward_runs\
+|    |
+|    +--- strategy_registry\
+|    |    +--- candidates\
+|    |    +--- approved\
+|    |    +--- rejected\
+|    |    +--- archive\
+|    |
+|    +--- memory_bank\
+|    |    +--- trade_cases\
+|    |    +--- regime_cases\
+|    |    +--- failure_cases\
+|    |    +--- retrieval_exports\
+|    |
+|    +--- intelligence_reports\
+|    |    +--- weekly\
+|    |    +--- monthly\
+|    |    +--- live_vs_research\
+|    |
+|    +--- metadata\
+|    |    +--- duckdb\
+|    |    +--- registries\
+|    |    +--- fingerprints\
+|    |    +--- run_logs\
+|    |    +--- checkpoints\
+|    |
+|    +--- services\
+|    |    +--- snapshots\
+|    |    +--- api_exports\
+|    |    +--- bot_contracts\
+|    |
+|    +--- docs\
+|    |    +--- project_model\
+|    |    +--- progression\
+|    |    +--- step_updates\
+|    |
+|    +--- jobs\
+|    +--- src\
+|    +--- tests\
+|
++--- bot_runtime\
+     +--- first_bot\
+     +--- shared_client\
+     +--- local_llm_bridge\
+     +--- mt5_executor\
+
+============================================================
+5) LOCKED TOOLCHAIN
+============================================================
+
+Data Layer
+- Python
+- Polars
+- Parquet
+
+Analytical Metadata Layer
+- DuckDB
+
+Backtest / Simulation Layer
+- Custom Numba-based engine
+- VectorBT-style research concepts ใช้เป็นแนวคิดได้
+- แต่ core ต้องคุมเองได้
+
+Parallel Layer
+- Ray
+
+Retrieval / Similar Case Layer
+- Qdrant
+
+Reasoning / Runtime Layer
+- Local LLM
+- Python execution engine
+- MT5 integration
+
+เหตุผล:
+- Polars + Parquet เร็วสำหรับ data engineering ขนาดใหญ่
+- DuckDB เร็วสำหรับ query, compare, research audit
+- Numba engine เร็วสำหรับ repeated simulation จำนวนมาก
+- Ray ขยายงาน backtest หลาย TF/หลาย regime พร้อมกันได้
+- Qdrant เหมาะสำหรับ similar-case retrieval ก่อนเข้า LLM
+
+============================================================
+6) REQUIRED TIMEFRAMES
+============================================================
+
+ทุกกลยุทธ์ต้องทดสอบครบทุก single timeframe ต่อไปนี้แบบบังคับ
+
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+ข้อบังคับเพิ่ม:
+- micro exit เป็น base layer ทุก TF
+- ห้ามข้าม TF ใด TF หนึ่งเพราะเดาเอาเองว่าไม่น่าดี
+- ต้องเก็บผลแยกต่อ TF เสมอ
+
+============================================================
+7) CANONICAL DATA MODEL
+============================================================
+
+7.1 Canonical bar schema
+ตาราง bars_canonical
+
+- symbol                STRING
+- timeframe             STRING
+- ts                    TIMESTAMP
+- open                  FLOAT64
+- high                  FLOAT64
+- low                   FLOAT64
+- close                 FLOAT64
+- tick_volume           FLOAT64
+- spread_points         FLOAT64 nullable
+- real_volume           FLOAT64 nullable
+- source_name           STRING
+- source_file           STRING
+- source_row_hash       STRING
+- ingest_batch_id       STRING
+- build_version         STRING
+- is_gap_fill           BOOLEAN
+- is_duplicate_removed  BOOLEAN
+- created_at_utc        TIMESTAMP
+
+Primary uniqueness:
+- (symbol, timeframe, ts)
+
+7.2 Source M1 schema
+ตาราง bars_m1_source
+
+- symbol
+- ts
+- open
+- high
+- low
+- close
+- tick_volume
+- source_name
+- source_file
+- raw_hash
+- ingest_batch_id
+- created_at_utc
+
+Primary uniqueness:
+- (symbol, ts, raw_hash)
+
+7.3 Continuity report schema
+ตาราง continuity_report
+
+- symbol
+- timeframe
+- batch_id
+- expected_bar_count
+- actual_bar_count
+- missing_bar_count
+- duplicate_bar_count
+- non_monotonic_count
+- first_ts
+- last_ts
+- quality_status
+- quality_notes
+- created_at_utc
+
+============================================================
+8) DUPLICATE PREVENTION DESIGN
+============================================================
+
+เป้าหมาย:
+- ไม่ให้ข้อมูลซ้ำเข้าฐานกลาง
+- ไม่ให้ข้อมูลแท่งเวลาซ้ำหลัง resample
+- ไม่ให้ weekly run สร้างผลซ้ำ
+- ไม่ให้ bot ใช้ชุดข้อมูลผิดรุ่น
+
+8.1 Duplicate types ที่ต้องกัน
+D1. raw duplicate
+- source row ซ้ำตรงตัว
+
+D2. timestamp duplicate
+- ts เดียวกันซ้ำหลายแถว
+
+D3. semantic duplicate
+- ts เดียวกัน แต่ค่า OHLCV ต่างกัน
+- ต้องถือเป็น data conflict ไม่ใช่ duplicate ธรรมดา
+
+D4. batch duplicate
+- ingest file เดิมซ้ำ
+- ต้อง detect จาก file hash
+
+D5. run duplicate
+- strategy run เดิมถูกบันทึกซ้ำ
+- ต้องกันด้วย run fingerprint
+
+D6. label duplicate
+- case เดิมถูก label ซ้ำโดยไม่เปลี่ยน label_version
+
+8.2 Duplicate prevention layers
+
+Layer 1: file-level dedup
+- คำนวณ SHA256 ของไฟล์ต้นทาง
+- ถ้า file hash เดิมเคย ingest แล้ว ให้ mark เป็น duplicate_batch
+- ไม่ append เข้าระบบซ้ำ
+
+Layer 2: row-level dedup
+- สร้าง row hash จาก symbol + ts + OHLCV
+- ถ้า row hash ซ้ำ ให้ drop
+- ถ้า ts ซ้ำแต่ค่าไม่เหมือนเดิม ให้ flag conflict
+
+Layer 3: canonical uniqueness
+- bars_canonical บังคับ unique (symbol, timeframe, ts)
+- write ต้องใช้ merge/upsert logic
+
+Layer 4: run fingerprint
+- strategy_id + version + symbol + timeframe + window + param_hash + data_snapshot_id
+- ถ้าซ้ำ ห้ามบันทึกผลเป็น run ใหม่
+
+Layer 5: label versioning
+- label = key(case_id, label_name, label_version)
+- ถ้า case เดิม label_version เดิม ห้าม insert ซ้ำ
+
+8.3 Conflict policy
+กรณี ts ซ้ำแต่ OHLC ต่าง
+- ห้ามเขียนทับเงียบ ๆ
+- บันทึกลง conflict table
+- mark quality_status = CONFLICT
+- ต้องมี review log
+
+8.4 Incremental append policy
+- append เฉพาะช่วงเวลาใหม่
+- ถ้าพบ overlap ต้อง compare hash ก่อน
+- overlap เหมือนเดิม = skip
+- overlap ต่าง = conflict review
+
+============================================================
+9) WEEKLY INTELLIGENCE RUN
+============================================================
+
+เมื่อกด run รายสัปดาห์ ระบบต้องทำลำดับนี้
+
+STEP 1: Ingest latest source data
+- ดึงข้อมูล M1 ใหม่จาก MT5/export source
+- archive raw file
+- compute file hash
+- create ingest_batch_id
+
+STEP 2: Validate raw input
+- schema check
+- datetime parse check
+- OHLC numeric check
+- monotonic check
+- raw duplicate check
+
+STEP 3: Update canonical M1
+- merge new bars
+- dedup by ts/hash
+- flag conflicts
+- write continuity report
+
+STEP 4: Rebuild affected TFs
+- M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1
+- rebuild only impacted windows
+- refresh manifests
+
+STEP 5: Update feature store
+- regime features
+- trend/volatility/range/structure features
+- quality features
+- micro exit support features
+
+STEP 6: Update labels
+- regime labels
+- outcome labels
+- exit labels
+- transition labels
+
+STEP 7: Run backtest batches
+- entry package research
+- exit package research
+- TP/SL surface research
+- mandatory micro exit research
+- all timeframe coverage
+
+STEP 8: Run validation
+- IS / OOS
+- walk-forward
+- regime-stratified
+- transition damage analysis
+
+STEP 9: Update strategy registry
+- candidate packages
+- approved packages
+- rejected packages
+- approval reasons
+- plateau stability summary
+
+STEP 10: Update memory bank
+- winning cases
+- losing cases
+- failed exit cases
+- transition damage cases
+- high-confidence similar cases
+
+STEP 11: Update retrieval index
+- build embeddings/input objects for Qdrant
+- refresh top-k retrievable cases
+- keep metadata filters by TF/regime/entry/exit/outcome
+
+STEP 12: Compare live vs research
+- live trade outcomes vs expected profile
+- detect drift
+- detect regime mismatch
+- detect execution damage
+
+STEP 13: Publish weekly intelligence
+- weekly snapshot text
+- strategy leaderboard
+- TF leaderboard
+- regime map updates
+- failure pattern alerts
+
+STEP 14: Update project text documents
+- progression checklist
+- step update
+- strategy/logic record
+- weekly run summary
+
+============================================================
+10) CENTRAL REGISTRY DESIGN
+============================================================
+
+ต้องมี registry กลางอย่างน้อย 8 ตัว
+
+10.1 dataset_registry
+เก็บ:
+- dataset_id
+- symbol
+- timeframe
+- source_batch_ids
+- start_ts
+- end_ts
+- row_count
+- continuity_status
+- build_version
+- created_at
+
+10.2 feature_registry
+เก็บ:
+- feature_set_id
+- feature_group
+- timeframe
+- source_dataset_id
+- feature_version
+- row_count
+- created_at
+
+10.3 label_registry
+เก็บ:
+- label_set_id
+- label_group
+- timeframe
+- source_feature_set_id
+- label_version
+- row_count
+- created_at
+
+10.4 backtest_run_registry
+เก็บ:
+- run_id
+- run_type
+- strategy_id
+- strategy_version
+- symbol
+- timeframe
+- window_id
+- param_hash
+- data_snapshot_id
+- run_fingerprint
+- result_path
+- status
+- created_at
+
+10.5 validation_registry
+เก็บ:
+- validation_id
+- run_id
+- validation_type
+- metric_summary_path
+- status
+- created_at
+
+10.6 package_registry
+เก็บ:
+- package_id
+- package_type
+- timeframe
+- regime
+- entry_logic_id
+- exit_logic_id
+- tp_sl_logic_id
+- status
+- evidence_path
+- approved_at
+
+10.7 memory_registry
+เก็บ:
+- case_id
+- source_type
+- timeframe
+- regime
+- outcome_class
+- embedding_version
+- vector_id
+- payload_path
+- created_at
+
+10.8 weekly_snapshot_registry
+เก็บ:
+- snapshot_id
+- week_start
+- week_end
+- dataset_id
+- package_registry_version
+- label_registry_version
+- report_path
+- created_at
+
+============================================================
+11) CORE TABLES / FILES
+============================================================
+
+11.1 DuckDB tables
+- bars_canonical
+- bars_source_m1
+- ingest_batches
+- ingest_conflicts
+- continuity_reports
+- feature_registry
+- label_registry
+- backtest_run_registry
+- validation_registry
+- package_registry
+- memory_registry
+- live_trade_feedback
+- weekly_snapshot_registry
+
+11.2 Parquet file groups
+- canonical bars by symbol/timeframe/date-partition
+- features by feature group/timeframe/date-partition
+- labels by label group/timeframe/date-partition
+- backtest outputs by run id
+- validation outputs by run id
+- memory payloads by case type
+
+============================================================
+12) FEATURE GROUPS
+============================================================
+
+Feature groups ที่ต้องมีเป็นฐาน
+
+12.1 Range features
+- session range
+- rolling high-low range
+- daily/weekly range
+- range percentile
+
+12.2 Trend features
+- EMA slope
+- distance from EMA
+- HH/HL count
+- LH/LL count
+- trend persistence
+
+12.3 Volatility features
+- ATR
+- ATR percentile
+- realized volatility
+- expansion/compression markers
+
+12.4 Structure features
+- BOS count
+- CHOCH count
+- breakout follow-through
+- false breakout rate
+- pullback depth
+- wick/body ratio
+- candle overlap ratio
+
+12.5 Quality features
+- spread condition
+- bar continuity quality
+- data conflict flags
+- missing-window flags
+
+12.6 Micro exit features
+- fast invalidation distance
+- momentum fade score
+- local structure break score
+- adverse excursion speed
+- time-in-trade stress score
+
+============================================================
+13) LABEL DESIGN
+============================================================
+
+13.1 Regime labels
+- TREND_UP
+- TREND_DOWN
+- RANGE_LOW
+- RANGE_WIDE
+- EXPANSION
+- COMPRESSION
+- TRANSITION
+- NO_TRADE
+
+13.2 Outcome labels
+- WIN_STRONG
+- WIN_WEAK
+- LOSS_FAST
+- LOSS_SLOW
+- BREAKEVEN
+- SCRATCH
+- MISSED_RUNNER
+
+13.3 Exit labels
+- TP_HIT
+- SL_HIT
+- MICRO_EXIT_FAST_INVALIDATION
+- MICRO_EXIT_MOMENTUM_FADE
+- TRAIL_EXIT
+- TIME_STOP
+- STRUCTURE_EXIT
+
+13.4 Quality / risk labels
+- DATA_CONFLICT
+- LOW_TRADE_COUNT
+- OOS_FAIL
+- TRANSITION_DAMAGE
+- EXECUTION_SLIPPAGE_RISK
+
+============================================================
+14) STRATEGY / LOGIC FAMILIES
+============================================================
+
+ต้องวิจัยให้ครอบคลุมทั้ง entry และ exit
+
+14.1 Entry families
+- market structure BOS/CHOCH
+- pullback continuation
+- breakout continuation
+- range rejection
+- liquidity sweep reversal
+- EMA location filter
+- ADX/ATR trend-volatility filter
+- session/range context filter
+
+14.2 Exit families
+- fixed TP/SL
+- ATR multiple TP/SL
+- structure TP/SL
+- R-multiple TP/SL
+- dynamic regime TP/SL
+- micro exit fast invalidation
+- micro exit momentum fade
+- micro exit structure damage
+- trailing / time stop / hybrid exit
+
+14.3 Selection principle
+- ไม่เอา point optimum
+- เอา plateau ที่เสถียร
+- ต้องผ่าน walk-forward
+- ต้องไม่พังหนักตอน transition regime
+- ต้องมี trade count พอ
+
+============================================================
+15) BOT SERVICE CONTRACT
+============================================================
+
+Database Platform ต้องเตรียม output/service ให้ bot อย่างน้อยดังนี้
+
+15.1 get_regime_snapshot(symbol)
+คืนค่า:
+- current regime probability / dominant regime
+- volatility state
+- trend state
+- range state
+- transition risk
+
+15.2 get_best_packages(symbol, timeframe, regime)
+คืนค่า:
+- approved entry package
+- approved exit package
+- approved TP/SL principle
+- evidence summary
+- known failure conditions
+
+15.3 get_similar_cases(context_payload)
+คืนค่า:
+- top similar winners
+- top similar losers
+- top transition damage cases
+- top failure exit cases
+
+15.4 get_micro_exit_profile(symbol, timeframe, regime)
+คืนค่า:
+- best micro exit family
+- expected hold behavior
+- invalidation threshold class
+
+15.5 get_weekly_intelligence(symbol)
+คืนค่า:
+- current leaderboard
+- drift warnings
+- weak packages
+- promoted packages
+- monitoring notes
+
+============================================================
+16) BOT FEEDBACK CONTRACT
+============================================================
+
+Bot ทุกตัวต้องส่งผลกลับฐานกลาง
+
+required fields:
+- bot_id
+- strategy_package_id
+- trade_ticket
+- symbol
+- timeframe
+- side
+- entry_ts
+- entry_price
+- sl_price
+- tp_price
+- rr_initial
+- regime_at_entry
+- trend_state
+- range_state
+- local_llm_decision
+- llm_confidence
+- execution_slippage
+- exit_ts
+- exit_price
+- exit_reason
+- realized_r
+- realized_pnl
+- monitoring_reason_log
+- order_comment
+- created_at
+
+เหตุผล:
+เพื่อให้ platform เรียนรู้จากผลจริง และเปรียบเทียบ live vs research ได้
+
+============================================================
+17) RUN MODES
+============================================================
+
+17.1 Daily light mode
+- ingest only
+- update canonical
+- refresh features/labels เฉพาะช่วงล่าสุด
+- append bot feedback
+
+17.2 Weekly intelligence mode
+- ทำ full weekly flow ทั้งชุด
+- update packages + memory + reports
+
+17.3 Full rebuild mode
+ใช้เมื่อ:
+- logic สำคัญเปลี่ยน
+- feature schema เปลี่ยน
+- label version เปลี่ยน
+- dataset conflict ถูกแก้ย้อนหลัง
+
+============================================================
+18) REQUIRED OUTPUT FILES EACH WEEK
+============================================================
+
+ทุกสัปดาห์ต้องได้ output อย่างน้อย
+
+- weekly_run_summary.txt
+- weekly_data_quality_report.txt
+- weekly_strategy_leaderboard.parquet
+- weekly_timeframe_leaderboard.parquet
+- weekly_regime_map.parquet
+- weekly_micro_exit_report.parquet
+- weekly_failure_patterns.parquet
+- weekly_snapshot_contract.json
+- progression_checklist.txt
+- step_update_latest.txt
+- strategy_logic_record.txt
+
+============================================================
+19) PHASE A2 CHECKLIST
+============================================================
+
+[ ] A2-01 Define canonical schemas
+[ ] A2-02 Define DuckDB registries
+[ ] A2-03 Define Parquet partition strategy
+[ ] A2-04 Define file hash + row hash standard
+[ ] A2-05 Define ingest conflict policy
+[ ] A2-06 Define M1 -> all TF build policy
+[ ] A2-07 Define impacted-window rebuild policy
+[ ] A2-08 Define weekly run orchestration order
+[ ] A2-09 Define service contract outputs for bots
+[ ] A2-10 Define bot feedback contract
+[ ] A2-11 Define weekly report outputs
+[ ] A2-12 Define progression update templates
+
+============================================================
+20) STEP UPDATE TEMPLATE
+============================================================
+
+[STEP UPDATE]
+date_utc:
+phase:
+step_id:
+title:
+status: NOT_STARTED | IN_PROGRESS | DONE | BLOCKED
+
+objective:
+input_used:
+output_created:
+logic_used:
+strategy_used:
+timeframes_covered:
+data_scope:
+validation_scope:
+result_summary:
+problems_found:
+decision:
+next_step:
+
+============================================================
+21) STRATEGY / LOGIC RECORD TEMPLATE
+============================================================
+
+[STRATEGY LOGIC RECORD]
+record_id:
+date_utc:
+strategy_family:
+entry_logic_id:
+exit_logic_id:
+micro_exit_id:
+tp_sl_family:
+symbol:
+timeframe:
+regime_scope:
+feature_set_version:
+label_version:
+dataset_id:
+validation_type:
+
+used_logic_summary:
+why_tested:
+what_changed:
+core_parameters:
+expected_behavior:
+failure_conditions:
+evaluation_metrics_summary:
+winner_or_not:
+promotion_decision:
+notes:
+
+============================================================
+22) IMPLEMENTATION PRIORITY AFTER A2
+============================================================
+
+หลังเอกสารนี้ ขั้นที่ถูกต้องคือ
+
+A3. Create canonical ingest technical spec
+- ระบุ schema แบบ field-by-field
+- ระบุ hash function
+- ระบุ upsert behavior
+- ระบุ continuity algorithm
+
+A4. Create weekly runner technical spec
+- orchestration graph
+- run checkpoints
+- retries
+- partial rerun policy
+
+A5. Create bot service contract technical spec
+- request/response payload
+- timeout rule
+- fallback rule
+
+============================================================
+23) FINAL DECISION
+============================================================
+
+จากนี้ให้ถือดังนี้
+
+1. Intelligent Database Platform คือระบบกลางหลักของโปรเจกต์
+2. Bot ทุกตัวเป็น client ของระบบกลางนี้
+3. Backtest, labels, memory, registry, weekly intelligence
+   ต้องไม่กระจายไปอยู่ใน bot หลายชุด
+4. ระบบนี้ต้องพัฒนาแบบ standalone ให้ run ได้เอง คิดได้เอง
+   และฉลาดขึ้นทุกสัปดาห์จากข้อมูลใหม่และผลจริง
+5. เป้าหมายไม่ใช่แค่เก็บข้อมูลย้อนหลัง
+   แต่คือสร้าง “intelligent trading knowledge platform”
+   ที่ bot อื่นมาใช้ได้โดยไม่ต้องย้อนกลับมาสร้าง research stack ใหม่
+
+============================================================
+24) CURRENT STATUS NOTE
+============================================================
+
+สถานะปัจจุบัน:
+- เอกสาร A2 design เสร็จ
+- ใช้เป็นแม่แบบคุม implementation phase ต่อไปได้
+- ระหว่างรอผลจาก build_entry_v2_component_packages.py
+  เอกสารนี้คือฐานที่ถูกต้องสำหรับแยกงานฝั่ง platform ออกจาก bot
+
+END OF DOCUMENT

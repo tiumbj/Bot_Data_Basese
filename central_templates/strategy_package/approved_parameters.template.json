@@ -1,0 +1,13 @@
+{
+  "strategy_id": "",
+  "version": "",
+  "parameters": {},
+  "timeframes": [
+    "M1",
+    "M5",
+    "M10",
+    "M15",
+    "H1",
+    "H4"
+  ]
+}

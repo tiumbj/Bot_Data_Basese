@@ -1,0 +1,15 @@
+{
+  "version": "v1.0.0",
+  "canonical_symbol": "XAUUSD",
+  "mapping_policy": "apply_only_at_execution_layer",
+  "brokers": {
+    "XM": "GOLD",
+    "Exness": "XAUUSDm",
+    "Demo": "XAUUSD"
+  },
+  "rules": {
+    "do_not_rename_dataset_symbol": true,
+    "do_not_rename_research_symbol": true,
+    "change_symbol_only_when_sending_order": true
+  }
+}

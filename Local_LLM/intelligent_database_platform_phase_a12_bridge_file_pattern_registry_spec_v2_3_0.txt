@@ -1,0 +1,829 @@
+# ============================================================
+# ชื่อไฟล์: intelligent_database_platform_phase_a12_bridge_file_pattern_registry_spec_v2_3_0.txt
+# เวอร์ชัน: v2.3.0
+# สถานะ: ACTIVE DESIGN SPEC
+# จุดประสงค์:
+#   กำหนดมาตรฐานการรับผล test/backtest/research เดิมเข้าสู่ Intelligent Database Platform
+#   โดยไม่รื้อ pipeline เดิม และทำให้ map เข้า registry/schema กลางได้แบบ deterministic
+# ============================================================
+
+TITLE: Intelligent Database Platform
+PHASE: A12
+DOCUMENT: Bridge File Pattern Registry Spec
+VERSION: v2.3.0
+
+================================================================
+0) EXECUTIVE DECISION
+================================================================
+
+เอกสารนี้ล็อกว่า output ที่มีอยู่แล้วจากระบบ test/research ปัจจุบัน
+ต้องถูกดูดเข้า platform กลางด้วย "Bridge Registry Layer"
+โดยใช้หลักการ 5 ข้อ:
+
+1. additive-only
+   - ห้ามรื้อ pipeline เดิม
+   - ห้ามทำให้ build/test ที่กำลังรันอยู่หยุด
+
+2. deterministic parsing
+   - ชื่อไฟล์ / path / folder / metric alias ต้องถูก parse แบบกติกาเดียว
+   - ห้ามตีความจากข้อความลอย ๆ แบบไม่คงที่
+
+3. identity-first
+   - ทุก artifact ต้องสร้าง identity กลางได้
+   - ใช้ run_id / artifact_id / strategy_fingerprint / timeframe / dataset_id
+
+4. normalization-before-publish
+   - ไฟล์เดิมใช้ต่อได้
+   - แต่ก่อนเข้า registry กลาง ต้อง normalize schema ก่อนเสมอ
+
+5. traceable lineage
+   - ต้องไล่ย้อนหลังได้ว่า artifact นี้มาจากไฟล์ไหน
+   - มาจาก command ไหน
+   - ใช้ data window ไหน
+   - ใช้ logic/strategy อะไร
+
+================================================================
+1) GOAL OF A12
+================================================================
+
+A12 มีเป้าหมาย 6 ข้อ:
+
+1. กำหนด file pattern registry กลาง
+2. กำหนด parser rules สำหรับชื่อไฟล์และ path
+3. กำหนด field mapping เข้าสู่ registry schema
+4. กำหนด metric alias normalization
+5. กำหนด promotion rules จาก legacy output -> normalized artifact
+6. ทำให้ผล test เดิมกลายเป็นสินทรัพย์กลางที่ bot ใช้ต่อได้
+
+================================================================
+2) SCOPE OF FILES TO INGEST
+================================================================
+
+Bridge layer ต้องรองรับ artifact อย่างน้อย 10 กลุ่ม:
+
+A. package build outputs
+B. entry component package outputs
+C. micro exit outputs
+D. timeframe benchmark outputs
+E. walk-forward validation outputs
+F. parameter sweep outputs
+G. summary txt/csv/parquet/json outputs
+H. run logs
+I. strategy note / decision note / checklist note
+J. publish candidate manifests
+
+ไฟล์อาจอยู่ในรูปแบบ:
+- .txt
+- .json
+- .jsonl
+- .csv
+- .parquet
+- .log
+
+================================================================
+3) LEGACY OUTPUT CLASSIFICATION
+================================================================
+
+Bridge layer ต้องจัดกลุ่มไฟล์เดิมเป็น 4 ระดับ:
+
+LEVEL 1: RAW_RESEARCH_ARTIFACT
+- output ดิบจากการ run
+- ยังไม่ normalize
+- ยังไม่มี metric schema มาตรฐาน
+
+LEVEL 2: PARSED_RESEARCH_ARTIFACT
+- parse file name / path / metadata ได้แล้ว
+- แต่อาจยังไม่ normalize metrics ทั้งหมด
+
+LEVEL 3: NORMALIZED_RESEARCH_RECORD
+- map เข้า field กลางได้ครบ
+- มี strategy_id, timeframe, dataset_id, metrics standard แล้ว
+
+LEVEL 4: PACKAGE_CANDIDATE_RECORD
+- พร้อมใช้ใน package registry
+- มี coverage evidence
+- มี validation evidence
+- มี micro-exit evidence ถ้าต้องใช้
+
+================================================================
+4) ROOT DIRECTORY CONTRACT
+================================================================
+
+แนะนำ root มาตรฐาน:
+
+C:\Data\Bot\Local_LLM\gold_research
+
+ภายในให้ bridge layer scan อย่างน้อย:
+
+jobs\
+outputs\
+artifacts\
+reports\
+logs\
+tmp\
+packages\
+validation\
+benchmarks\
+notes\
+
+ถ้าโครงเดิมต่างจากนี้:
+- ใช้ path registry file เป็นตัวระบุ mapping
+- ห้าม hardcode path แบบกระจัดกระจายหลายจุด
+
+================================================================
+5) FILE PATTERN REGISTRY STANDARD
+================================================================
+
+ให้มี registry กลาง 1 ไฟล์ เช่น:
+
+config\bridge_file_patterns.yaml
+
+โครงมาตรฐานต่อ 1 pattern:
+
+- pattern_id
+- artifact_family
+- glob_pattern
+- regex_pattern
+- priority
+- enabled
+- parser_name
+- metric_profile
+- promotion_target
+- notes
+
+ตัวอย่าง concept:
+
+pattern_id: entry_component_package_json
+artifact_family: entry_component_package
+glob_pattern: "**/*entry*component*package*.json"
+regex_pattern: "(?P<strategy>.+?)_(?P<timeframe>M1|M2|M3|M4|M5|M6|M10|M15|M30|H1|H4|D1)_(?P<kind>package|summary|validation)"
+priority: 100
+enabled: true
+parser_name: parse_entry_component_package_json
+metric_profile: standard_backtest_metrics_v1
+promotion_target: normalized_research_record
+
+================================================================
+6) FILE DISCOVERY RULES
+================================================================
+
+Bridge scanner ต้องทำตามลำดับนี้:
+
+STEP 1
+scan root paths ตาม config
+
+STEP 2
+คัดเฉพาะ file extensions ที่รองรับ
+
+STEP 3
+match pattern ด้วย glob ก่อน
+- เพื่อความเร็ว
+
+STEP 4
+validate ด้วย regex_pattern
+- เพื่อดึง named groups
+
+STEP 5
+เรียก parser ตาม parser_name
+
+STEP 6
+สร้าง parsed artifact metadata
+
+STEP 7
+normalize metrics/schema
+
+STEP 8
+upsert เข้า registry
+
+กฎ:
+- ถ้าไฟล์ match หลาย pattern ให้เลือก priority สูงสุด
+- ถ้า priority เท่ากัน ให้ quarantine เป็น ambiguous_pattern_match
+- ห้าม parse ไฟล์เดิมซ้ำถ้า content hash เดิมและ mtime เดิม
+
+================================================================
+7) REQUIRED NAMED GROUPS
+================================================================
+
+regex parser ควรดึงค่าให้ได้มากที่สุดจากชื่อไฟล์หรือ path:
+
+- strategy_name
+- strategy_variant
+- timeframe
+- component_family
+- exit_family
+- version
+- side_scope
+- metric_scope
+- regime_scope
+- date_from
+- date_to
+- run_label
+
+หมายเหตุ:
+- ถ้าไม่มีบาง field ในชื่อไฟล์ ให้ parser พยายามอ่านจาก payload ภายในไฟล์
+- ถ้ายังหาไม่ได้ ให้ใส่ null แล้ว mark parse_confidence ต่ำ
+
+================================================================
+8) CANONICAL ARTIFACT IDENTITY
+================================================================
+
+ทุกไฟล์ที่ ingest ต้องสร้าง identity กลางดังนี้:
+
+artifact_id =
+hash(
+  normalized_abs_path +
+  file_size +
+  file_mtime_utc +
+  content_hash_sha256_prefix
+)
+
+record_id =
+hash(
+  artifact_family +
+  strategy_fingerprint +
+  timeframe +
+  dataset_id +
+  test_window_start +
+  test_window_end +
+  metric_profile +
+  legacy_source_tag
+)
+
+run_id:
+- ถ้า payload มี run_id ให้ใช้
+- ถ้าไม่มี ให้ bridge สร้าง synthetic_run_id
+  จาก command/file group/time window
+
+strategy_fingerprint =
+hash(
+  normalized_strategy_name +
+  entry_logic_signature +
+  exit_logic_signature +
+  filter_signature +
+  package_variant_signature
+)
+
+================================================================
+9) STRATEGY NAME NORMALIZATION
+================================================================
+
+ปัญหาหลักของ output เดิมคือ strategy naming มักยาวและไม่คงที่
+จึงต้อง normalize เป็น 3 ชั้น:
+
+A. raw_strategy_name
+- ชื่อเดิมทั้งหมดจากไฟล์
+
+B. normalized_strategy_name
+- lowercase
+- แทนช่องว่างด้วย _
+- ตัดอักขระพิเศษที่ไม่จำเป็น
+- collapse "__" เป็น "_"
+
+C. strategy_family_key
+- map alias หลายชื่อที่จริงคือกลุ่มเดียวกัน
+- เช่น:
+  pullback_deep
+  entry_v2_pullback_deep
+  locked_pullback_deep
+  -> strategy_family_key = pullback_deep
+
+================================================================
+10) TIMEFRAME NORMALIZATION
+================================================================
+
+รองรับและบังคับเฉพาะ:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+กฎ:
+- "m1", "1m", "tf_m1" -> normalize เป็น "M1"
+- "h1", "1h", "tf_h1" -> normalize เป็น "H1"
+
+ถ้า parse ไม่ได้:
+- quarantine reason = timeframe_unresolved
+
+================================================================
+11) METRIC PROFILE STANDARD
+================================================================
+
+Bridge layer ต้อง normalize metric aliases เข้าสู่ canonical metrics standard
+
+11.1 Canonical metrics core
+- total_trades
+- win_rate_pct
+- avg_rr
+- expectancy_r
+- pnl_points
+- pnl_r
+- profit_factor
+- max_drawdown_points
+- max_drawdown_r
+- sharpe_like
+- sortino_like
+- exposure_pct
+- avg_hold_bars
+- median_hold_bars
+- tp_hit_rate_pct
+- sl_hit_rate_pct
+- breakeven_rate_pct
+- timeout_exit_rate_pct
+- micro_exit_rate_pct
+
+11.2 Alias examples
+ตัวอย่าง alias ที่ต้อง map:
+- trades -> total_trades
+- n_trades -> total_trades
+- total_positions -> total_trades
+
+- winrate -> win_rate_pct
+- win_rate -> win_rate_pct
+- win_pct -> win_rate_pct
+
+- pf -> profit_factor
+- profitfactor -> profit_factor
+
+- dd_points -> max_drawdown_points
+- max_dd_points -> max_drawdown_points
+
+- exp_r -> expectancy_r
+- expectancy -> expectancy_r
+
+- avg_hold -> avg_hold_bars
+- avg_bars -> avg_hold_bars
+
+11.3 Metric registry rule
+ต้องมี metric alias registry กลาง เช่น:
+config\metric_alias_registry.yaml
+
+================================================================
+12) TEST WINDOW EXTRACTION RULE
+================================================================
+
+Bridge layer ต้องพยายามดึง test window จาก 3 แหล่งตามลำดับ:
+
+PRIORITY 1
+payload ภายในไฟล์
+
+PRIORITY 2
+header ใน txt/log/json metadata
+
+PRIORITY 3
+ชื่อไฟล์/path
+
+ถ้าไม่มี:
+- test_window_start = null
+- test_window_end = null
+- time_window_confidence = low
+
+ถ้า date format ไม่ชัด:
+- quarantine เป็น ambiguous_test_window
+
+================================================================
+13) DATASET ID RESOLUTION
+================================================================
+
+ทุก record ต้องผูกกับ dataset_id
+
+dataset_id ควร resolve จาก:
+- canonical M1 source id
+- symbol
+- timezone normalization policy
+- resample policy version
+- continuity policy version
+
+ตัวอย่าง:
+dataset_id = XAUUSD_M1_CANONICAL_UTC_v1
+
+ถ้าไม่ resolve ได้:
+- quarantine reason = dataset_unresolved
+
+================================================================
+14) COMMAND LINEAGE RULE
+================================================================
+
+ถ้าดึง command หรือ job source ได้ ให้เก็บ:
+- command_text
+- script_name
+- script_version
+- execution_host
+- working_dir
+- input_refs
+- output_refs
+
+ถ้าไม่มีข้อมูล:
+- เก็บ source_path + parser_name แทน
+
+จุดประสงค์:
+- ใช้ไล่ย้อนหลังว่าผลนี้เกิดจากอะไร
+- ใช้แยกผลจาก script เวอร์ชันต่างกัน
+
+================================================================
+15) PARSER FAMILY DESIGN
+================================================================
+
+อย่างน้อยต้องมี parser family ดังนี้:
+
+1. parse_json_summary
+2. parse_jsonl_run_log
+3. parse_csv_metrics_table
+4. parse_txt_summary_header_metrics
+5. parse_parquet_metrics_rows
+6. parse_validation_report
+7. parse_package_manifest
+8. parse_note_text
+
+Parser แต่ละตัวต้องคืนค่าโครงเดียวกัน:
+
+{
+  "parse_status": "...",
+  "parse_confidence": "...",
+  "artifact_family": "...",
+  "raw_strategy_name": "...",
+  "normalized_strategy_name": "...",
+  "timeframe": "...",
+  "version": "...",
+  "metrics_raw": {...},
+  "metadata_raw": {...},
+  "test_window_start": "...",
+  "test_window_end": "...",
+  "notes_text": "...",
+  "source_path": "...",
+  "content_hash": "..."
+}
+
+================================================================
+16) PROMOTION TARGETS
+================================================================
+
+ผลจาก parser จะถูก promote ตามเงื่อนไข:
+
+16.1 RAW -> PARSED
+เมื่อ pattern match + parser คืนค่า parse_status=ok
+
+16.2 PARSED -> NORMALIZED
+เมื่อ:
+- timeframe resolved
+- strategy resolved
+- metric profile resolved
+- dataset_id resolved
+- schema minimum pass
+
+16.3 NORMALIZED -> PACKAGE_CANDIDATE
+เมื่อ:
+- metrics core ครบขั้นต่ำ
+- test window ชัด
+- strategy_fingerprint ชัด
+- timeframe coverage evidence ผ่าน
+- validation evidence ผ่านตาม policy
+
+================================================================
+17) TIMEFRAME COVERAGE EVIDENCE RULE
+================================================================
+
+เนื่องจากโปรเจกต์นี้ล็อกว่า:
+- ต้องทดสอบทุก single timeframe
+- micro exit เป็น base layer บังคับ
+
+Bridge layer ต้องสะสม evidence ว่า strategy family ใด coverage ครบแล้ว
+
+coverage matrix:
+- strategy_family_key
+- timeframe
+- entry_test_present
+- exit_test_present
+- micro_exit_present
+- validation_present
+- latest_record_id
+
+ถ้า TF ใดขาด:
+- strategy ยัง publish เป็น "fully covered" ไม่ได้
+
+================================================================
+18) MICRO EXIT EVIDENCE RULE
+================================================================
+
+ทุก strategy/package ที่จะใช้ production research ต้องมีสถานะหนึ่งในนี้:
+
+- micro_exit_verified
+- micro_exit_missing
+- micro_exit_not_required (ห้ามใช้ในโปรเจกต์นี้ เว้นแต่มี policy เปลี่ยน)
+- micro_exit_ambiguous
+
+สำหรับโปรเจกต์นี้ให้ถือว่า:
+- micro_exit_missing = ไม่ผ่าน publish final
+
+================================================================
+19) QUARANTINE REASONS
+================================================================
+
+Bridge layer ต้อง quarantine ได้อย่างน้อย:
+- unsupported_extension
+- pattern_unmatched
+- ambiguous_pattern_match
+- parser_failed
+- timeframe_unresolved
+- dataset_unresolved
+- ambiguous_test_window
+- metric_profile_unresolved
+- invalid_metric_value
+- missing_required_core_metrics
+- strategy_unresolved
+- duplicate_artifact
+- duplicate_record_conflict
+- malformed_payload
+- low_parse_confidence
+
+================================================================
+20) DUPLICATE HANDLING RULES
+================================================================
+
+แยก duplicate เป็น 3 แบบ:
+
+TYPE A: duplicate_artifact
+- ไฟล์เดิมแท้ ๆ
+- path/content hash เดิม
+- skip ได้
+
+TYPE B: duplicate_record_same_metrics
+- คนละไฟล์ แต่ normalized record เดียวกัน
+- mark alias_of เดิม
+
+TYPE C: duplicate_record_conflict
+- identity เดียวกัน แต่ metric ไม่เท่ากัน
+- quarantine และต้อง review
+
+================================================================
+21) PRIORITY OF METADATA SOURCES
+================================================================
+
+ค่ากลางของ field ให้เลือกจากลำดับนี้:
+
+Priority 1: payload structured fields
+Priority 2: parser-extracted header/meta
+Priority 3: filename/path regex groups
+Priority 4: directory context defaults
+Priority 5: manual mapping registry
+
+ห้าม reverse ลำดับนี้โดยไม่มีเหตุผล
+
+================================================================
+22) NORMALIZED RESEARCH RECORD MINIMUM SCHEMA
+================================================================
+
+ขั้นต่ำต้องมี:
+
+- record_id
+- artifact_id
+- artifact_family
+- source_path
+- content_hash
+- parse_confidence
+- raw_strategy_name
+- normalized_strategy_name
+- strategy_family_key
+- strategy_fingerprint
+- timeframe
+- dataset_id
+- metric_profile
+- test_window_start
+- test_window_end
+- total_trades
+- win_rate_pct
+- profit_factor
+- expectancy_r
+- max_drawdown_r
+- parse_status
+- normalization_status
+- promotion_status
+- observed_at_utc
+
+================================================================
+23) PACKAGE CANDIDATE PROMOTION POLICY
+================================================================
+
+ถ้าจะเลื่อนเป็น package candidate อย่างน้อยต้องผ่าน:
+
+1. total_trades > minimum policy
+2. core metrics complete
+3. timeframe resolved
+4. dataset resolved
+5. no critical quarantine flags
+6. micro_exit evidence available
+7. strategy fingerprint available
+8. validation tag available or attachable
+
+ถ้ายังไม่ครบ:
+- ยังเก็บเป็น normalized research record ได้
+- แต่ publish ไม่ได้
+
+================================================================
+24) NOTES INGESTION POLICY
+================================================================
+
+เอกสาร .txt note ที่มนุษย์บันทึกไว้มีค่า
+Bridge layer ต้อง ingest notes ได้ด้วย
+
+notes record ควร map:
+- note_id
+- related_strategy_family_key
+- related_timeframe
+- note_type
+- author
+- created_at
+- body_text
+- extracted_tags
+- source_path
+
+ใช้ประโยชน์:
+- ช่วยอธิบายว่าทำไม package นี้ถูกเลือก/ตัด
+- ใช้ประกอบ LLM context ได้ในอนาคต
+
+================================================================
+25) BRIDGE REGISTRY TABLES REQUIRED
+================================================================
+
+อย่างน้อยต้องมี table/pseudo-table เหล่านี้:
+
+1. bridge_discovered_files
+2. bridge_pattern_matches
+3. bridge_parse_runs
+4. normalized_research_records
+5. normalized_metric_values
+6. strategy_alias_registry
+7. metric_alias_registry
+8. timeframe_coverage_matrix
+9. package_candidate_records
+10. bridge_quarantine_records
+11. note_records
+
+================================================================
+26) WEEKLY AUTOMATION INSERTION POINT
+================================================================
+
+เมื่อระบบ weekly run ทำงาน
+bridge ingestion ต้องเสียบในตำแหน่งนี้:
+
+1. ingest new market data
+2. canonical update
+3. affected TF rebuild
+4. feature refresh
+5. backtest runs
+6. validation runs
+7. bridge legacy outputs
+8. normalize + promote
+9. update package registry
+10. update labels/memory
+11. publish intelligence snapshot
+
+เหตุผล:
+- ให้ผลจากระบบเก่าและระบบใหม่รวมเข้ากลางในรอบเดียว
+
+================================================================
+27) ACCESS MODEL FOR OTHER BOTS
+================================================================
+
+bot อื่นไม่ควรอ่าน bridge tables ตรง
+แต่ควรอ่านผ่าน:
+
+- active package views
+- research summary views
+- timeframe coverage views
+- similar-case retrieval service
+- note summary service
+
+Bridge layer เป็น internal ingestion concern
+ไม่ใช่ public access layer
+
+================================================================
+28) RECOMMENDED FILE NAMING FOR NEW OUTPUTS
+================================================================
+
+ตั้งแต่ตอนนี้เป็นต้นไป ถ้าสร้าง output ใหม่ ควรใช้รูปแบบ:
+
+{artifact_family}__{strategy_family_key}__{timeframe}__{dataset_id}__{window_start}_{window_end}__{version}.{ext}
+
+ตัวอย่าง:
+backtest_summary__pullback_deep__M30__XAUUSD_M1_CANONICAL_UTC_v1__20240101_20251231__v1_0_0.json
+
+ข้อดี:
+- parse ง่าย
+- deterministic
+- ลด ambiguity
+- bridge ง่ายขึ้นมาก
+
+================================================================
+29) PHASE A12 DELIVERABLES
+================================================================
+
+A12 ถือว่าสำเร็จเมื่อมี:
+
+1. bridge_file_patterns.yaml spec
+2. metric_alias_registry.yaml spec
+3. strategy_alias_registry.yaml spec
+4. normalized research record schema spec
+5. quarantine reason registry
+6. promotion policy
+7. timeframe coverage evidence policy
+8. notes ingestion policy
+
+================================================================
+30) PROGRESSION CHECKLIST
+================================================================
+
+[ ] A12.1 Lock root scan paths
+[ ] A12.2 Lock supported file extensions
+[ ] A12.3 Lock file pattern registry structure
+[ ] A12.4 Lock regex named groups standard
+[ ] A12.5 Lock artifact identity rules
+[ ] A12.6 Lock strategy alias normalization rules
+[ ] A12.7 Lock timeframe normalization rules
+[ ] A12.8 Lock metric alias normalization rules
+[ ] A12.9 Lock dataset_id resolution policy
+[ ] A12.10 Lock parser family contract
+[ ] A12.11 Lock promotion policy
+[ ] A12.12 Lock quarantine reasons
+[ ] A12.13 Lock timeframe coverage matrix
+[ ] A12.14 Lock notes ingestion policy
+[ ] A12.15 Lock weekly insertion point
+
+================================================================
+31) STEP UPDATE TEMPLATE
+================================================================
+
+STEP UPDATE
+PHASE: A12
+STEP: A12.x
+STATUS: TODO / IN_PROGRESS / DONE / BLOCKED
+
+INPUTS USED:
+- source files:
+- directories scanned:
+- parser family:
+- metric profile:
+
+RESULT:
+- pattern(s) locked:
+- aliases added:
+- records normalized:
+- quarantine count:
+- issues found:
+
+DECISION:
+- accepted standard:
+- rejected option:
+- reason:
+
+NEXT:
+- next exact step:
+
+================================================================
+32) STRATEGY / LOGIC RECORD TEMPLATE
+================================================================
+
+STRATEGY / LOGIC RECORD
+record_version: v1
+strategy_family_key:
+strategy_variant:
+timeframe:
+entry_logic_summary:
+exit_logic_summary:
+micro_exit_status:
+filters_used:
+dataset_id:
+test_window_start:
+test_window_end:
+artifact_family:
+source_path:
+metrics_core:
+  total_trades:
+  win_rate_pct:
+  profit_factor:
+  expectancy_r:
+  max_drawdown_r:
+promotion_status:
+notes:
+follow_up_required:
+
+================================================================
+33) FINAL LOCK
+================================================================
+
+จากนี้ให้ถือว่า:
+
+1. ของที่ test มาแล้ว = research asset กลาง
+2. bridge layer ต้องดูดของเดิมเข้า platform ได้
+3. ห้ามใช้ legacy file names แบบไร้มาตรฐานต่อไปโดยไม่มี registry รองรับ
+4. bot อื่นต้องอ่านผ่าน publish/service layer ไม่ใช่ผ่านไฟล์ดิบ
+5. current tests continue; bridge standardizes them into platform assets
+
+END OF DOCUMENT

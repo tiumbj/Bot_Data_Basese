@@ -1,0 +1,448 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A17 Bootstrap Implementation Plan
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a17_bootstrap_implementation_plan_v2_8_0.txt
+# เวอร์ชัน: v2.8.0
+# ============================================================
+
+DOCUMENT PURPOSE
+This document converts A16 bootstrap base modules spec into an implementation-first plan.
+It defines the exact coding order, dependency checkpoints, acceptance criteria, and promotion rules
+for the first production-safe code layer of the Intelligent Database Platform.
+
+PROJECT POSITION
+A17 is the first implementation planning phase after architecture was stabilized through A8-A16.
+This phase does not introduce new architecture. It locks the exact execution order for writing the
+bootstrap modules that all later subsystems will depend on.
+
+LOCKED PRINCIPLES
+1. Additive only. No redesign of the architecture.
+2. Bootstrap layer must remain small, deterministic, and free from business logic.
+3. Configuration is immutable after load.
+4. Startup is fail-fast.
+5. Logging is centralized and idempotent.
+6. All future registry, ingest, backtest, label, publish, SDK, and API modules must depend on the
+   bootstrap layer rather than re-implement base concerns.
+7. Every file must be complete and production-safe before moving to the next one.
+8. Every finished step must update progression records and implementation notes.
+
+TARGET OUTPUT OF A17
+After A17 is executed in code, the platform must be able to:
+- resolve project root safely
+- load environment/config safely
+- validate required directories and writable targets
+- initialize centralized logging
+- create startup/runtime manifest
+- run startup health checks
+- expose a single platform initialization entrypoint
+- stop immediately if critical bootstrap conditions are invalid
+
+BOOTSTRAP MODULE SET
+The bootstrap set for this phase is:
+1. version.py
+2. constants.py
+3. exceptions.py
+4. paths.py
+5. env.py
+6. settings.py
+7. logging_config.py
+8. runtime_manifest.py
+9. health/startup_checks.py
+10. init_platform.py
+
+RECOMMENDED ROOT LAYOUT
+intelligent_database_platform/
+  src/intelligent_db/
+    bootstrap/
+      version.py
+      constants.py
+      exceptions.py
+      paths.py
+      env.py
+      settings.py
+      logging_config.py
+      runtime_manifest.py
+      init_platform.py
+    health/
+      startup_checks.py
+    registry/
+    ingest/
+    features/
+    backtest/
+    labels/
+    services/
+    publishing/
+    jobs/
+  config/
+  state/
+  logs/
+  data/
+  docs/
+  tests/
+
+IMPLEMENTATION ORDER
+The exact order is mandatory because each later file depends on earlier files.
+
+STEP A17.1 - version.py
+Purpose:
+- hold platform semantic version
+- expose build metadata placeholders if needed later
+
+Required responsibilities:
+- PLATFORM_NAME constant
+- PLATFORM_VERSION constant
+- function get_version_string()
+
+Rules:
+- no env access
+- no file IO
+- no imports from higher layers
+
+Acceptance criteria:
+- import works in isolation
+- version string is deterministic
+- no side effects at import time
+
+Definition of done:
+- file imports cleanly
+- used successfully by a small smoke import
+
+STEP A17.2 - constants.py
+Purpose:
+- centralize static constant values used by bootstrap and future modules
+
+Required responsibilities:
+- environment variable names
+- directory names
+- manifest file names
+- default log names
+- active snapshot pointer names
+- service mode names
+
+Rules:
+- constants only
+- no path resolution logic
+- no env access
+
+Acceptance criteria:
+- all constants are uppercase and grouped by concern
+- no duplicated literals remain in bootstrap files
+
+Definition of done:
+- constants imported by version/settings/paths without cyclic imports
+
+STEP A17.3 - exceptions.py
+Purpose:
+- define platform-level exception taxonomy
+
+Required responsibilities:
+- PlatformError base class
+- BootstrapError
+- SettingsError
+- PathError
+- StartupCheckError
+- ManifestError
+- LoggingSetupError
+
+Rules:
+- exception classes only
+- no IO
+- no heavy dependencies
+
+Acceptance criteria:
+- clear inheritance tree
+- each class has a precise failure purpose
+
+Definition of done:
+- bootstrap modules raise only these typed exceptions for known failure families
+
+STEP A17.4 - paths.py
+Purpose:
+- resolve project paths safely and deterministically
+
+Required responsibilities:
+- resolve project root
+- resolve config/log/state/data/docs/test subpaths
+- create missing runtime directories only where allowed
+- check writability for required runtime directories
+
+Rules:
+- must use pathlib
+- no reliance on current working directory assumptions without fallback rules
+- project root resolution must be explicit and testable
+
+Acceptance criteria:
+- returns immutable path bundle object
+- root resolution fails clearly when invalid
+- path creation is limited to approved runtime directories
+
+Definition of done:
+- can produce a stable path bundle in local development and production layout
+
+STEP A17.5 - env.py
+Purpose:
+- parse raw environment variables into normalized primitives before settings assembly
+
+Required responsibilities:
+- read .env/environment variables
+- typed parsing helpers for str/int/float/bool/path/list
+- required vs optional env distinction
+- masking/redaction helper for secrets in logs
+
+Rules:
+- raw env parsing only
+- no business defaults beyond bootstrap scope
+- all parser failures must be explicit
+
+Acceptance criteria:
+- invalid bool/int/float/path values fail with typed errors
+- secret values are never logged raw
+
+Definition of done:
+- test inputs for valid and invalid env values behave deterministically
+
+STEP A17.6 - settings.py
+Purpose:
+- assemble immutable bootstrap settings object
+
+Required responsibilities:
+- combine env values + constants + resolved paths
+- expose frozen settings model
+- define runtime mode
+- define enabled components for bootstrap stage
+- define required directories and file names
+
+Rules:
+- settings object must be immutable/frozen after creation
+- no startup side effects
+- no logger initialization here
+
+Acceptance criteria:
+- one entrypoint function to load settings
+- settings validation errors are grouped and human-readable
+- repeated load under same env returns same values
+
+Definition of done:
+- init_platform can consume settings without additional parsing logic
+
+STEP A17.7 - logging_config.py
+Purpose:
+- initialize centralized platform logging
+
+Required responsibilities:
+- create logger configuration once
+- console handler + rotating file handler policy
+- common formatter
+- idempotent setup function
+- log level from settings
+
+Rules:
+- no duplicate handlers on repeated init
+- no logger setup at import time
+- avoid noisy third-party logs unless explicitly configured
+
+Acceptance criteria:
+- repeated setup calls do not duplicate lines
+- file logging path is validated before activation
+- startup logs include platform name/version
+
+Definition of done:
+- init_platform can call setup_logging exactly once or safely multiple times
+
+STEP A17.8 - runtime_manifest.py
+Purpose:
+- generate a runtime manifest snapshot for each platform startup
+
+Required responsibilities:
+- create run bootstrap metadata
+- record version, mode, root paths, timestamp, config summary, enabled services
+- write manifest atomically
+- redact secrets
+
+Rules:
+- append-only history optional later, but current startup manifest write must be atomic
+- manifest must be JSON or YAML by locked standard; choose one and keep it fixed
+- manifest write failure must fail startup
+
+Acceptance criteria:
+- manifest path deterministic
+- atomic replace behavior works
+- manifest contains enough data for audit/debug
+
+Definition of done:
+- startup produces a readable manifest with redacted safe fields only
+
+STEP A17.9 - health/startup_checks.py
+Purpose:
+- verify platform readiness before activation
+
+Required responsibilities:
+- verify root exists
+- verify required directories exist or can be created
+- verify writable runtime paths
+- verify required config files when flagged mandatory
+- verify bootstrap snapshot directory state
+- verify active bundle pointers if needed later
+
+Rules:
+- checks return structured results before raising final aggregated error
+- hard failures stop startup
+- warnings may continue only if explicitly allowed by settings
+
+Acceptance criteria:
+- each check has check_id, severity, status, message
+- aggregate summary is emitted to logs
+- fatal state raises StartupCheckError
+
+Definition of done:
+- init_platform receives a clean pass/fail report before platform activation
+
+STEP A17.10 - init_platform.py
+Purpose:
+- single bootstrap orchestration entrypoint
+
+Required responsibilities:
+- resolve version
+- resolve paths
+- load env
+- load settings
+- setup logging
+- run startup checks
+- create runtime manifest
+- return initialized bootstrap context object
+
+Rules:
+- no domain-specific logic
+- no registry loading yet
+- no ingest/backtest jobs yet
+- orchestration only
+
+Acceptance criteria:
+- one public init function
+- deterministic ordering
+- fail-fast on fatal errors
+- returns typed bootstrap context for next phases
+
+Definition of done:
+- a one-command smoke init succeeds on a valid local environment
+- invalid environment fails early with typed errors and clear logs
+
+DEPENDENCY MAP
+version.py -> none
+constants.py -> none
+exceptions.py -> none
+paths.py -> constants.py, exceptions.py
+env.py -> constants.py, exceptions.py
+settings.py -> constants.py, exceptions.py, paths.py, env.py, version.py
+logging_config.py -> constants.py, exceptions.py, settings.py, version.py
+runtime_manifest.py -> constants.py, exceptions.py, settings.py, version.py, paths.py
+health/startup_checks.py -> exceptions.py, settings.py, paths.py
+init_platform.py -> all bootstrap modules above
+
+MANDATORY CODING RULES
+1. Each file must be implemented as a complete file, not patch fragments.
+2. Every module must have a version header and concise purpose comment.
+3. No hidden global state except intentional logger singleton behavior.
+4. No side effects during import except constant/class declaration.
+5. All file writes must be atomic when the file is stateful.
+6. Use pathlib only for path handling.
+7. Type hints are mandatory.
+8. Error messages must identify module + failure reason clearly.
+9. Secret values must always be redacted before logging or writing manifest.
+10. Bootstrap modules must stay independent from registry/ingest/backtest layers.
+
+ACCEPTANCE TEST PLAN FOR A17
+Test Group 1 - Import Safety
+- import every bootstrap module individually
+- assert no file IO or logger side effects happen during import
+
+Test Group 2 - Settings Determinism
+- load settings twice with same env and compare values
+- load invalid env values and assert typed failures
+
+Test Group 3 - Path Safety
+- simulate valid root
+- simulate invalid root
+- simulate non-writable runtime dir
+- assert explicit failure classification
+
+Test Group 4 - Logging Idempotency
+- call setup_logging twice
+- confirm no duplicate handlers or duplicate output lines
+
+Test Group 5 - Manifest Safety
+- generate runtime manifest
+- confirm secrets are redacted
+- confirm atomic file replace
+- confirm invalid manifest path fails startup
+
+Test Group 6 - Startup Health
+- validate pass case
+- validate warning case when allowed
+- validate fatal fail case
+- confirm aggregated output structure
+
+Test Group 7 - Full Bootstrap Smoke
+- run init_platform on valid local env
+- confirm returned context contains version, settings, paths, logger, manifest info, health summary
+
+CHECKPOINT GATES
+Gate 1 - Foundation Gate
+Pass when A17.1-A17.3 complete and import-safe.
+
+Gate 2 - Path and Config Gate
+Pass when A17.4-A17.6 complete and deterministic.
+
+Gate 3 - Runtime Safety Gate
+Pass when A17.7-A17.9 complete and startup checks behave correctly.
+
+Gate 4 - Bootstrap Activation Gate
+Pass when A17.10 smoke init works in a valid environment.
+
+PROGRESSION CHECKLIST
+[ ] A17.1 version.py implemented
+[ ] A17.2 constants.py implemented
+[ ] A17.3 exceptions.py implemented
+[ ] Gate 1 passed
+[ ] A17.4 paths.py implemented
+[ ] A17.5 env.py implemented
+[ ] A17.6 settings.py implemented
+[ ] Gate 2 passed
+[ ] A17.7 logging_config.py implemented
+[ ] A17.8 runtime_manifest.py implemented
+[ ] A17.9 health/startup_checks.py implemented
+[ ] Gate 3 passed
+[ ] A17.10 init_platform.py implemented
+[ ] Gate 4 passed
+[ ] A17 bootstrap layer accepted for next phase
+
+STEP UPDATE TEMPLATE
+Step ID:
+Module:
+Version:
+Status:
+Objective:
+Dependencies used:
+Files created/updated:
+Tests executed:
+Observed result:
+Failure notes:
+Acceptance decision:
+Next exact step:
+
+IMPLEMENTATION NOTE TEMPLATE
+Date:
+Phase:
+Module:
+Decision:
+Reason:
+Risk:
+Mitigation:
+Follow-up:
+
+SOLIDITY DECISION FOR THIS VERSION
+Yes, bootstrap architecture can be considered finalized and solid at the planning level in this version.
+What remains is implementation execution, tests, and evidence capture. The architecture itself should not
+change unless a hard operational failure is observed during implementation.
+
+NEXT CORRECT PHASE
+A18 - Bootstrap code generation plan or direct implementation of the A17 module set in the locked order.

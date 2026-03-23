@@ -1,0 +1,850 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform - Phase A10 Code Skeleton Spec
+# เวอร์ชัน: v2.1.0
+# ประเภท: Project Master Technical Spec (.txt)
+# สถานะ: LOCKED FOR IMPLEMENTATION
+# ============================================================
+
+[OBJECTIVE]
+เอกสารนี้แปลง A9 registry/data contract ไปเป็น code skeleton ระดับเริ่ม implementation จริง โดยล็อก:
+1) โครงสร้างโฟลเดอร์จริง
+2) ชื่อไฟล์จริง
+3) หน้าที่แต่ละโมดูล
+4) bootstrap / init / migration order
+5) run flow จริงของ weekly intelligence platform
+6) production rules สำหรับ multi-bot access
+7) progression checklist + update template สำหรับอัปเดตทุกครั้งหลังจบแต่ละขั้น
+
+================================================================
+SECTION 1: FINAL PROJECT SPLIT
+================================================================
+
+[A] INTELLIGENT DATABASE PLATFORM
+หน้าที่:
+- รับข้อมูล MT5
+- canonicalize OHLCV
+- dedup / quarantine / continuity validation
+- rebuild timeframe datasets
+- สร้าง feature store
+- run backtest / validation / walk-forward
+- สร้าง labels / case memory / retrieval index
+- publish active package / weekly intelligence snapshot
+- เปิด SDK/API ให้ bot อื่นใช้
+- รับ live feedback กลับเข้าระบบ
+
+[B] BOT RUNTIME PLATFORM
+หน้าที่:
+- อ่านข้อมูลจาก platform กลางผ่าน SDK/API เท่านั้น
+- ขอ signal context / active package / similar cases / regime snapshot
+- ประเมิน candidate setup
+- ส่ง context ให้ local LLM
+- รับ final confirm
+- ส่งคำสั่งเข้า MT5
+- monitor order
+- ส่ง feedback กลับฐานข้อมูลกลาง
+
+LOCKED RULE:
+Bot ห้ามอ่าน Parquet, DuckDB internal tables, registry files, quarantine files, or feature files โดยตรง
+Bot ต้องผ่าน SDK หรือ FastAPI เท่านั้น
+
+================================================================
+SECTION 2: ROOT FOLDER STRUCTURE
+================================================================
+
+ROOT:
+C:\Data\Bot\Local_LLM\gold_research\intelligent_data_platform\
+
+TARGET STRUCTURE:
+
+intelligent_data_platform/
+  pyproject.toml
+  requirements.txt
+  README.txt
+  .env.example
+  config/
+    platform.yaml
+    contracts.yaml
+    service.yaml
+    retention.yaml
+  docs/
+    master_model.txt
+    phase_a2_design.txt
+    phase_a3_technical_spec.txt
+    phase_a4_manifest_and_contract_spec.txt
+    phase_a5_free_contract_suite.txt
+    phase_a6_pandera_schema_thresholds.txt
+    phase_a7_implementation_code_spec.txt
+    phase_a8_access_architecture_spec.txt
+    phase_a9_registry_schema_sql_spec.txt
+    phase_a10_code_skeleton_spec.txt
+    progression_checklist.txt
+    step_updates/
+    strategy_logic_records/
+  src/
+    idp/
+      __init__.py
+      version.py
+      settings.py
+      logging_config.py
+      constants.py
+      exceptions.py
+      utils/
+        __init__.py
+        time_utils.py
+        hash_utils.py
+        io_utils.py
+        path_utils.py
+        id_utils.py
+      contracts/
+        __init__.py
+        ohlcv_schema.py
+        threshold_policy.py
+        severity_policy.py
+        contract_runner.py
+      ingest/
+        __init__.py
+        mt5_pull.py
+        raw_batch_fingerprint.py
+        normalize_ohlcv.py
+        continuity_validator.py
+        dedup_engine.py
+        conflict_resolver.py
+        quarantine_writer.py
+        canonical_writer.py
+        resample_builder.py
+        ingest_pipeline.py
+      registry/
+        __init__.py
+        duckdb_manager.py
+        migrations.py
+        schema_sql.py
+        run_registry.py
+        artifact_registry.py
+        package_registry.py
+        publish_registry.py
+        feedback_registry.py
+      features/
+        __init__.py
+        feature_spec.py
+        feature_builder.py
+        regime_features.py
+        feature_store_writer.py
+      backtest/
+        __init__.py
+        scenario_registry.py
+        numba_kernels.py
+        entry_simulator.py
+        micro_exit_simulator.py
+        tp_sl_surface.py
+        walk_forward.py
+        validation_runner.py
+        result_aggregator.py
+      labels/
+        __init__.py
+        outcome_labeler.py
+        setup_labeler.py
+        case_memory_builder.py
+        retrieval_payload_builder.py
+        label_pipeline.py
+      retrieval/
+        __init__.py
+        qdrant_client.py
+        embedding_adapter.py
+        collection_manager.py
+        point_upsert.py
+        similar_case_search.py
+      publishing/
+        __init__.py
+        active_package_publisher.py
+        intelligence_snapshot_publisher.py
+        alias_manager.py
+        publish_pipeline.py
+      services/
+        __init__.py
+        dto.py
+        sdk_client.py
+        auth.py
+        cache.py
+        service_facade.py
+        api/
+          __init__.py
+          main.py
+          dependencies.py
+          routers/
+            health.py
+            market.py
+            packages.py
+            memory.py
+            labels.py
+            feedback.py
+      jobs/
+        __init__.py
+        init_platform.py
+        weekly_ingest_job.py
+        weekly_backtest_job.py
+        weekly_publish_job.py
+        rebuild_timeframe_job.py
+        refresh_memory_job.py
+        run_weekly_cycle.py
+  storage/
+    raw/
+    quarantine/
+    canonical/
+    features/
+    backtest/
+    labels/
+    publish/
+  registry/
+    duckdb/
+  runtime/
+    logs/
+    locks/
+    cache/
+  tests/
+    test_contracts.py
+    test_dedup.py
+    test_continuity.py
+    test_registry.py
+    test_services.py
+    test_publish.py
+
+================================================================
+SECTION 3: FILE-BY-FILE RESPONSIBILITY
+================================================================
+
+[CORE]
+version.py
+- เก็บ VERSION กลาง
+- expose __version__
+
+settings.py
+- โหลด config จาก yaml + env
+- validate required config
+- build resolved settings object เดียวทั้งระบบ
+
+logging_config.py
+- กำหนด JSON logging format
+- file + console handlers
+- run_id correlation support
+
+constants.py
+- canonical timeframe list
+- severity enums
+- publish aliases
+- state enums
+
+exceptions.py
+- custom exceptions
+- ConfigError, ContractFailError, QuarantineRequiredError, PublishError
+
+[UTILS]
+time_utils.py
+- UTC convert
+- timeframe alignment
+- calendar bucket start/end
+
+hash_utils.py
+- batch fingerprint
+- row hash
+- content hash for artifacts
+
+io_utils.py
+- safe parquet write/read
+- atomic replace
+- temp file strategy
+
+path_utils.py
+- build platform paths from settings
+
+id_utils.py
+- run_id
+- artifact_id
+- package_id
+- feedback_event_id
+
+[CONTRACTS]
+ohlcv_schema.py
+- Pandera schema for canonical M1 OHLCV
+- column type + nullability + field checks
+
+threshold_policy.py
+- rolling robust thresholds
+- spike / gap / abnormal range thresholds
+
+severity_policy.py
+- PASS / WARN / FAIL / QUARANTINE mapping
+
+contract_runner.py
+- run Pandera validation
+- merge threshold findings
+- return structured contract result
+
+[INGEST]
+mt5_pull.py
+- pull bars from MT5
+- output normalized raw dataframe with source metadata
+
+raw_batch_fingerprint.py
+- compute batch fingerprint
+- block exact duplicate batch before heavy work
+
+normalize_ohlcv.py
+- rename columns
+- cast schema
+- normalize timezone to UTC
+- sort deterministically
+
+continuity_validator.py
+- detect gaps / overlaps / reversed timestamps / missing bars
+
+dedup_engine.py
+- row-level logical key dedup
+- deterministic winner selection
+
+conflict_resolver.py
+- resolve same logical key but differing values
+- output canonical candidate + quarantine rows
+
+quarantine_writer.py
+- write failed/warn/conflict rows and reason codes
+
+canonical_writer.py
+- atomic upsert into canonical parquet partitions
+- update row counts / lineage metadata
+
+resample_builder.py
+- deterministic resample from canonical M1 -> M2/M3/M4/M5/M6/M10/M15/M30/H1/H4/D1
+
+ingest_pipeline.py
+- orchestrate full ingest sequence
+- emit run_result object
+
+[REGISTRY]
+duckdb_manager.py
+- open/close duckdb connection
+- PRAGMA setup
+- helper query methods
+
+migrations.py
+- apply schema migrations in order
+- maintain schema version table
+
+schema_sql.py
+- holds CREATE TABLE / VIEW / INDEX SQL
+
+run_registry.py
+- write ingest/backtest/publish run events
+- update run states
+
+artifact_registry.py
+- register all produced artifacts
+- content hash / row count / path / lineage
+
+package_registry.py
+- strategy package versions
+- active/inactive publish states
+
+publish_registry.py
+- active alias mapping
+- publish history and rollback targets
+
+feedback_registry.py
+- append-only live feedback writes
+- deduplicate by event id
+
+[FEATURES]
+feature_spec.py
+- canonical feature catalog and field names
+
+feature_builder.py
+- base OHLCV derived features
+
+regime_features.py
+- trend/range/volatility/structure regime features
+
+feature_store_writer.py
+- partitioned feature storage
+- lineage to canonical source + run_id
+
+[BACKTEST]
+scenario_registry.py
+- entry / exit scenario families
+- parameter grid ids
+
+numba_kernels.py
+- core fast simulation kernels
+
+entry_simulator.py
+- entry logic evaluation engine
+
+micro_exit_simulator.py
+- mandatory micro exit base layer engine
+
+tp_sl_surface.py
+- TP/SL / RR surface exploration
+
+walk_forward.py
+- time-split walk-forward runner
+
+validation_runner.py
+- out-of-sample / robustness / stability validation
+
+result_aggregator.py
+- summarize backtest metrics by tf / package / regime
+
+[LABELS]
+outcome_labeler.py
+- trade result labeling
+- positive / negative / early-fail / regime-fail / exit-quality labels
+
+setup_labeler.py
+- pre-trade setup labels
+- context quality / confirmation quality / entry quality
+
+case_memory_builder.py
+- build historical cases for retrieval
+
+retrieval_payload_builder.py
+- build vector metadata payload and filterable fields
+
+label_pipeline.py
+- full label refresh pipeline
+
+[RETRIEVAL]
+qdrant_client.py
+- Qdrant connection setup
+
+embedding_adapter.py
+- embedding interface
+- local/offline-friendly adapter wrapper
+
+collection_manager.py
+- create/update collection
+- payload index config
+
+point_upsert.py
+- upsert vector points
+
+similar_case_search.py
+- search top-k similar labeled historical cases
+
+[PUBLISHING]
+active_package_publisher.py
+- publish currently approved package set
+
+intelligence_snapshot_publisher.py
+- publish weekly intelligence summary
+
+alias_manager.py
+- map active aliases to immutable artifacts
+
+publish_pipeline.py
+- orchestrate publish run + rollback-safe write
+
+[SERVICES]
+dto.py
+- pydantic response/request contracts
+
+sdk_client.py
+- Python SDK methods for bots
+
+auth.py
+- API key / service token validation
+
+cache.py
+- in-memory TTL cache for hot reads
+
+service_facade.py
+- stable read/write contract used by SDK and API
+
+api/main.py
+- FastAPI bootstrap
+
+dependencies.py
+- shared dependency injection
+
+routers/health.py
+- /health
+- /ready
+
+routers/market.py
+- /market/snapshot
+- /market/regime
+
+routers/packages.py
+- /packages/active
+- /packages/by-timeframe
+
+routers/memory.py
+- /memory/similar-cases
+
+routers/labels.py
+- /labels/latest
+
+routers/feedback.py
+- /feedback/trade
+- /feedback/order-event
+
+[JOBS]
+init_platform.py
+- initialize folders, DuckDB, base config validation
+
+weekly_ingest_job.py
+- run ingest + resample + feature refresh prerequisites
+
+weekly_backtest_job.py
+- run backtest + validation + labels refresh
+
+weekly_publish_job.py
+- run package publish + intelligence snapshot publish
+
+rebuild_timeframe_job.py
+- selective TF rebuild
+
+refresh_memory_job.py
+- rebuild retrieval cases / vectors
+
+run_weekly_cycle.py
+- master orchestrator of weekly cycle
+
+================================================================
+SECTION 4: BUILD ORDER (IMPLEMENTATION ORDER)
+================================================================
+
+PHASE A10.1 - FOUNDATION
+1. version.py
+2. constants.py
+3. exceptions.py
+4. settings.py
+5. path_utils.py
+6. logging_config.py
+7. init_platform.py
+
+DELIVERABLE:
+- platform boots with config validation
+- folders auto-created
+- run_id + log path generated
+
+PHASE A10.2 - REGISTRY CORE
+1. schema_sql.py
+2. duckdb_manager.py
+3. migrations.py
+4. run_registry.py
+5. artifact_registry.py
+6. publish_registry.py
+
+DELIVERABLE:
+- DuckDB registry initializes cleanly
+- schema version table works
+- run/artifact rows insert correctly
+
+PHASE A10.3 - INGEST CONTRACT GATE
+1. ohlcv_schema.py
+2. threshold_policy.py
+3. severity_policy.py
+4. contract_runner.py
+5. mt5_pull.py
+6. normalize_ohlcv.py
+7. continuity_validator.py
+8. raw_batch_fingerprint.py
+
+DELIVERABLE:
+- raw MT5 bars can be loaded and validated
+- FAIL/QUARANTINE rows separated correctly
+
+PHASE A10.4 - DEDUP + CANONICAL WRITER
+1. dedup_engine.py
+2. conflict_resolver.py
+3. quarantine_writer.py
+4. canonical_writer.py
+5. ingest_pipeline.py
+
+DELIVERABLE:
+- duplicate rows resolved deterministically
+- canonical parquet updated atomically
+- quarantine artifacts written with reasons
+
+PHASE A10.5 - RESAMPLE + FEATURE LAYER
+1. resample_builder.py
+2. feature_spec.py
+3. feature_builder.py
+4. regime_features.py
+5. feature_store_writer.py
+
+DELIVERABLE:
+- all mandatory TF datasets built from canonical M1
+- feature store available for backtest
+
+PHASE A10.6 - BACKTEST CORE
+1. scenario_registry.py
+2. numba_kernels.py
+3. entry_simulator.py
+4. micro_exit_simulator.py
+5. tp_sl_surface.py
+6. walk_forward.py
+7. validation_runner.py
+8. result_aggregator.py
+
+DELIVERABLE:
+- package backtests run on all locked TFs
+- micro exit included on every run
+
+PHASE A10.7 - LABELS + RETRIEVAL
+1. outcome_labeler.py
+2. setup_labeler.py
+3. case_memory_builder.py
+4. retrieval_payload_builder.py
+5. label_pipeline.py
+6. qdrant_client.py
+7. collection_manager.py
+8. point_upsert.py
+9. similar_case_search.py
+
+DELIVERABLE:
+- labeled historical cases published to retrieval plane
+
+PHASE A10.8 - PUBLISH LAYER
+1. package_registry.py
+2. active_package_publisher.py
+3. intelligence_snapshot_publisher.py
+4. alias_manager.py
+5. publish_pipeline.py
+
+DELIVERABLE:
+- active package aliases point to immutable artifacts
+- rollback-safe publish works
+
+PHASE A10.9 - ACCESS LAYER
+1. dto.py
+2. service_facade.py
+3. sdk_client.py
+4. auth.py
+5. cache.py
+6. FastAPI routers
+7. api/main.py
+
+DELIVERABLE:
+- bot can read context via SDK or HTTP
+- feedback writes idempotent
+
+PHASE A10.10 - WEEKLY ORCHESTRATION
+1. weekly_ingest_job.py
+2. weekly_backtest_job.py
+3. refresh_memory_job.py
+4. weekly_publish_job.py
+5. run_weekly_cycle.py
+
+DELIVERABLE:
+- one command runs full weekly intelligence cycle
+
+================================================================
+SECTION 5: BOOTSTRAP / INIT FLOW
+================================================================
+
+COMMAND TARGET:
+python -m idp.jobs.init_platform
+
+INIT FLOW:
+1. load settings
+2. validate required paths / env
+3. create folder tree
+4. initialize logging
+5. create/open DuckDB registry
+6. apply migrations
+7. verify storage roots
+8. verify mandatory config sections
+9. write init run row to registry
+10. print bootstrap summary
+
+SUCCESS CRITERIA:
+- DuckDB file exists
+- schema version table initialized
+- folder tree exists
+- config resolved successfully
+- run registry has INIT_SUCCESS row
+
+================================================================
+SECTION 6: WEEKLY MASTER FLOW
+================================================================
+
+COMMAND TARGET:
+python -m idp.jobs.run_weekly_cycle
+
+ORDER:
+1. start master run
+2. weekly_ingest_job
+3. rebuild impacted TF datasets
+4. refresh feature store
+5. weekly_backtest_job
+6. refresh labels
+7. refresh memory / retrieval index
+8. weekly_publish_job
+9. write intelligence snapshot
+10. mark active aliases
+11. close master run
+12. write docs step update entry
+
+FAILURE RULES:
+- ingest fail => stop full cycle
+- backtest fail => do not publish new active package
+- publish fail => keep prior active alias unchanged
+- retrieval refresh fail => publish allowed only if last good retrieval snapshot exists
+
+================================================================
+SECTION 7: SERVICE CONTRACT (PRODUCTION ACCESS)
+================================================================
+
+PRIMARY READ ACCESS:
+- Python SDK for Python bots
+- FastAPI for non-Python / remote services
+
+SERVICE METHODS (SDK FACADE):
+1. get_health()
+2. get_market_snapshot(symbol, timeframe)
+3. get_regime_snapshot(symbol, timeframe)
+4. get_active_package(symbol, timeframe)
+5. get_active_micro_exit(symbol, timeframe)
+6. get_similar_cases(symbol, timeframe, context, limit)
+7. get_label_summary(symbol, timeframe)
+8. get_weekly_intelligence(symbol)
+9. write_trade_feedback(payload)
+10. write_order_event(payload)
+
+LOCKED RULE:
+Every SDK method must map 1:1 to service_facade methods
+HTTP routers are thin wrappers only
+Business logic must not live in router files
+
+================================================================
+SECTION 8: CONFIGURATION MODEL
+================================================================
+
+MINIMAL PRODUCTION CONFIG:
+platform.yaml
+- environment
+- root_path
+- storage_path
+- registry_path
+- symbol_list
+- mandatory_timeframes
+- canonical_source_timeframe=M1
+- timezone=UTC
+
+contracts.yaml
+- null policy
+- continuity thresholds
+- anomaly thresholds
+- quarantine triggers
+
+service.yaml
+- api_host
+- api_port
+- auth_mode
+- api_keys
+- cache_ttl_seconds
+- qdrant_url
+- qdrant_mode
+
+retention.yaml
+- raw_retention_days
+- quarantine_retention_days
+- run_log_retention_days
+- publish_artifact_retention_policy
+
+CONFIG RULES:
+- settings.py merges yaml + env overrides
+- env has priority
+- invalid config must stop boot immediately
+
+================================================================
+SECTION 9: TEST STRATEGY
+================================================================
+
+MANDATORY TESTS BEFORE PRODUCTION BOOT:
+1. schema validation test
+2. dedup determinism test
+3. continuity detection test
+4. canonical write atomicity test
+5. resample accuracy test
+6. registry migration test
+7. service response contract test
+8. feedback idempotency test
+9. active alias rollback test
+10. weekly cycle dry-run test
+
+================================================================
+SECTION 10: PROGRESSION CHECKLIST
+================================================================
+
+[ ] A10.1 foundation modules complete
+[ ] A10.2 registry core complete
+[ ] A10.3 contract gate complete
+[ ] A10.4 dedup + canonical writer complete
+[ ] A10.5 resample + feature layer complete
+[ ] A10.6 backtest core complete
+[ ] A10.7 labels + retrieval complete
+[ ] A10.8 publish layer complete
+[ ] A10.9 access layer complete
+[ ] A10.10 weekly orchestration complete
+[ ] init_platform boots successfully
+[ ] weekly_cycle dry-run passes
+[ ] active package publish works
+[ ] SDK read contract stable
+[ ] HTTP read contract stable
+[ ] feedback write contract idempotent
+
+================================================================
+SECTION 11: STEP UPDATE TEMPLATE
+================================================================
+
+STEP UPDATE RECORD
+Version:
+Date:
+Phase:
+Module(s):
+Objective:
+Input:
+Output Artifact(s):
+Registry Impact:
+Canonical Impact:
+Feature Impact:
+Backtest Impact:
+Publish Impact:
+Failure / Risk Found:
+Decision:
+Next Step:
+
+================================================================
+SECTION 12: STRATEGY / LOGIC RECORD TEMPLATE
+================================================================
+
+STRATEGY / LOGIC RECORD
+Record ID:
+Date:
+Strategy Family:
+Entry Logic:
+Micro Exit Logic:
+TP/SL Logic:
+Timeframes Tested:
+Regimes Covered:
+Validation Method:
+Metrics Summary:
+Weakness Found:
+Decision:
+Package Status:
+Notes:
+
+================================================================
+SECTION 13: FINAL LOCK FOR A10
+================================================================
+
+FINAL DECISION:
+A10 locks the implementation skeleton and build order.
+From this point forward, changes should be additive and scoped.
+Do not redesign the architecture again.
+Do not let bot read internal storage directly.
+Do not place business logic in API routers.
+Do not skip micro exit in any timeframe research.
+Do not bypass contract gate before canonical write.
+
+END OF DOCUMENT

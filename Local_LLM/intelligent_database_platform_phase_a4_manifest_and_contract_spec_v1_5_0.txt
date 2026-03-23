@@ -1,0 +1,693 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A4 Manifest + Data Contract Decision
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a4_manifest_and_contract_spec_v1_5_0.txt
+# เวอร์ชัน: v1.5.0
+# ============================================================
+
+TITLE: INTELLIGENT DATABASE PLATFORM PHASE A4
+SUBTITLE: FOLDER + MANIFEST CONTRACT SPEC + LAYER 2 DATA CONTRACT DECISION
+VERSION: v1.5.0
+DATE: 2026-03-20
+STATUS: LOCK CANDIDATE
+
+============================================================
+SECTION 0 — PURPOSE
+============================================================
+เอกสารนี้กำหนด 4 เรื่องหลัก
+
+1) โครงสร้าง folder และ artifact naming มาตรฐานของ Intelligent Database Platform
+2) manifest / run_id / publish contract สำหรับทุก job
+3) service access model ที่ยืดหยุ่นสำหรับ bot หลายประเภทในอนาคต
+4) การตัดสินใจเชิงสถาปัตยกรรมว่า Layer 2 (Row-level dedup + data contract gate)
+   ควรใช้ Great Expectations หรือ Soda.io อย่างไร
+
+เป้าหมายคือให้ระบบ:
+- ทันสมัย
+- เร็ว
+- เชื่อถือได้
+- ตรวจสอบย้อนหลังได้
+- ขยายไปใช้กับ bot หลายประเภทได้
+- ไม่ต้องทำ backtest / labels / memory / intelligence ซ้ำในแต่ละ bot
+
+============================================================
+SECTION 1 — FINAL DECISION FOR LAYER 2
+============================================================
+FINAL DECISION:
+- ใช้ Great Expectations (GX Core) เป็น Layer 2 Data Contract Gate
+- ใช้ Polars + DuckDB เป็น deterministic row-level dedup / canonicalization engine
+- เก็บ Soda เป็น OPTIONAL future layer สำหรับ observability / anomaly monitoring ภายหลัง
+  ไม่ใช้เป็นแกนหลักของ Layer 2 ใน phase ปัจจุบัน
+
+WHY THIS IS THE BEST CURRENT DECISION:
+A. Layer 2 ของระบบนี้ต้องทำงาน embedded ใน Python pipeline แบบ local-first
+   และต้องคุม quarantine / unexpected rows / contract violation ได้ละเอียด
+B. GX Core เหมาะกับการฝังเข้า Python orchestration และรองรับ expectation-based validation,
+   custom SQL expectation, และ unexpected rows workflow
+C. Soda ปัจจุบันแข็งแรงมากในแนว data contracts + observability + anomaly monitoring
+   แต่ในงานนี้ Layer 2 ต้องการ deterministic ingestion gate ก่อนเข้า Canonical DB
+   ซึ่งยังเหมาะกับ GX + custom Polars/DuckDB มากกว่า
+D. Dedup ที่เร็วและ deterministic ไม่ควรพึ่ง data-quality framework โดยตรง
+   ต้องให้ Polars/DuckDB ทำ แล้วให้ GX ทำหน้าที่ verify + quarantine + contract reporting
+
+LOCKED PRINCIPLE:
+- Data quality framework = contract gate
+- Dedup engine = Polars/DuckDB
+- Canonical DB receives only PASS rows
+- FAIL / WARN rows go to quarantine with diagnostics
+
+============================================================
+SECTION 2 — TECHNOLOGY REVIEW SUMMARY
+============================================================
+2.1 GREAT EXPECTATIONS (GX)
+STRENGTHS:
+- Python-native integration
+- expectation-based contracts
+- custom SQL expectation support
+- unexpected rows extraction / failed-row investigation
+- validation history model
+- suitable for embedded pipeline execution
+- suitable for contract-first ingestion gate
+
+BEST USE IN THIS PROJECT:
+- schema contract
+- null / range / uniqueness / timestamp / OHLC logic contract
+- batch validation before canonical write
+- quarantine routing
+- validation artifact creation
+- row sample / unexpected rows diagnostics
+
+2.2 SODA
+STRENGTHS:
+- strong data contracts direction
+- strong observability direction
+- anomaly detection / monitors
+- convenient declarative checks
+- useful for team-facing quality monitoring
+
+BEST USE IN THIS PROJECT:
+- future observability layer
+- weekly intelligence monitoring
+- freshness / drift / anomaly dashboard
+- multi-dataset health monitoring
+- service governance layer after platform stabilizes
+
+2.3 WHY NOT USE SODA AS PRIMARY LAYER 2 RIGHT NOW
+- Layer 2 here is not just “quality checks”; it is an ingestion gate tightly coupled to
+  row-level canonicalization and quarantine logic
+- We need Python-embedded control, deterministic pass/fail routing, and close integration
+  with Polars/DuckDB transforms
+- We want one minimal critical-path dependency at ingestion time
+- Therefore GX fits better as the contract gate, while Soda remains a strong optional add-on later
+
+============================================================
+SECTION 3 — LAYERED ARCHITECTURE (UPDATED)
+============================================================
+LAYER 0: SOURCE ACQUISITION
+- MT5 puller
+- raw batch capture
+- source metadata capture
+- pull timestamp
+- broker / symbol / timeframe source id
+
+LAYER 1: RAW LANDING
+- raw parquet batches
+- batch fingerprint
+- immutable raw snapshots
+- source manifest
+- no overwrite
+
+LAYER 2: CONTRACT GATE + DEDUP PREP
+- Great Expectations validates batch-level contract
+- contract results written to validation artifacts
+- Polars computes normalized types
+- logical primary key computed
+- row_hash computed
+- timestamp checks
+- OHLC sanity checks
+- volume sanity checks
+- session/timezone checks
+- pass rows -> staging_pass
+- fail rows -> quarantine_rows
+- warn rows -> staging_warn
+
+LAYER 3: DETERMINISTIC CANONICALIZATION
+- Polars/DuckDB dedup engine
+- exact duplicate remove
+- logical duplicate resolve
+- conflict precedence rules
+- continuity classification
+- canonical M1 writer
+- immutable versioned dataset output
+
+LAYER 4: DERIVED TF BUILD
+- deterministic resampling M1 -> M2/M3/M4/M5/M6/M10/M15/M30/H1/H4/D1
+- TF continuity report
+- TF manifest
+- TF row counts
+- TF quality flags
+
+LAYER 5: FEATURE + LABEL STORE
+- regime features
+- trend filters
+- volatility features
+- swing structure
+- entry labels
+- exit labels
+- TP/SL surfaces
+- micro-exit labels
+
+LAYER 6: BACKTEST / VALIDATION ENGINE
+- custom Numba simulation engine
+- vectorized research loops
+- walk-forward validation
+- Monte Carlo / perturbation / robustness tests
+- package registry updates
+
+LAYER 7: MEMORY + RETRIEVAL
+- case memory creation
+- embedding generation
+- Qdrant upsert
+- similar-case retrieval index
+- weekly memory refresh
+
+LAYER 8: PUBLISH + ACCESS
+- DuckDB analytical views
+- Python SDK
+- HTTP API
+- package registry
+- latest intelligence snapshot
+- bot service endpoints
+
+LAYER 9: OBSERVABILITY (OPTIONAL FUTURE)
+- Soda monitors or equivalent observability tooling
+- anomaly detection on dataset behavior over time
+- freshness degradation alerts
+- schema drift alerts
+- volume drift alerts
+- weekly quality governance dashboard
+
+============================================================
+SECTION 4 — WHAT GREAT EXPECTATIONS MUST CHECK AT LAYER 2
+============================================================
+4.1 REQUIRED CONTRACTS FOR OHLCV
+A. STRUCTURE CONTRACT
+- required columns exist
+- correct column order not mandatory, but required names mandatory
+- timestamp column exists
+- open/high/low/close numeric
+- tick_volume numeric or integer-like
+- spread optional but if present must be numeric
+- real_volume optional but if present must be numeric
+
+B. TYPE CONTRACT
+- timestamp parseable to UTC-aligned datetime
+- price columns castable to float64
+- volume castable to int64/float64 as defined
+- no string contamination in numeric fields
+
+C. KEY CONTRACT
+- no null timestamp
+- no null open/high/low/close
+- symbol must match expected symbol alias registry
+- timeframe source must match ingestion config
+
+D. OHLC LOGIC CONTRACT
+- high >= max(open, close, low)
+- low <= min(open, close, high)
+- high >= low
+- open > 0
+- high > 0
+- low > 0
+- close > 0
+
+E. RANGE / STATISTICAL CONTRACT
+- bar_range = high - low must be >= 0
+- zero-range bars allowed only within policy threshold
+- extreme outlier bars flagged if z-score / robust MAD threshold breached
+- impossible jumps beyond configured sanity boundary flagged
+- negative volume forbidden
+- suspicious repeated identical OHLC bars flagged
+
+F. TEMPORAL CONTRACT
+- timestamp monotonic in batch after sort
+- timestamp must align to expected minute boundary
+- future timestamps forbidden
+- duplicates by timestamp flagged
+- gap count recorded
+- overlap count recorded
+
+G. SOURCE CONTRACT
+- source broker id present
+- source batch id present
+- ingestion ts present
+- file fingerprint present
+- pipeline version present
+
+4.2 CONTRACT OUTCOMES
+- PASS: batch can enter staging_pass
+- WARN: batch enters staging_warn and continues only if policy allows
+- FAIL: rows or batch routed to quarantine_rows and canonical write blocked for affected rows
+- HARD FAIL: job stops and marks run as failed
+
+============================================================
+SECTION 5 — IMPORTANT DESIGN RULE
+============================================================
+Great Expectations must NOT be the tool that performs final dedup.
+It verifies conditions and surfaces unexpected rows.
+Final duplicate resolution must be handled by deterministic code in Polars/DuckDB.
+
+REASON:
+- faster
+- easier to benchmark
+- easier to reason about precedence
+- easier to reproduce
+- easier to keep exact same results across weekly runs
+
+============================================================
+SECTION 6 — DEDUP ENGINE SPEC
+============================================================
+6.1 PRIMARY KEYS
+PRIMARY LOGICAL KEY:
+(symbol_canonical, timeframe_source, ts_utc)
+
+TECHNICAL KEYS:
+- row_hash_raw
+- row_hash_normalized
+- batch_fingerprint
+- source_record_id if available
+
+6.2 DEDUP ORDER
+STEP 1: Remove exact duplicates by row_hash_normalized
+STEP 2: Detect logical duplicates by (symbol_canonical, timeframe_source, ts_utc)
+STEP 3: If multiple rows remain for same logical key, resolve by precedence:
+        a. higher source_priority
+        b. later ingestion_ts
+        c. more complete metadata
+        d. lower anomaly_score
+        e. else route to quarantine_conflict
+STEP 4: Write canonical survivor
+STEP 5: Write duplicate ledger for all dropped rows
+
+6.3 DUPLICATE LEDGER MUST STORE
+- run_id
+- symbol
+- timeframe_source
+- ts_utc
+- survivor_row_hash
+- dropped_row_hash
+- duplicate_type
+- resolution_reason
+- source_priority
+- source_batch_id
+- ingestion_ts
+
+============================================================
+SECTION 7 — STATISTICAL ANOMALY SCREEN AT LAYER 2
+============================================================
+Use LIGHTWEIGHT statistical anomaly checks before Canonical DB.
+This is not full observability yet; this is pre-canonical safety screening.
+
+REQUIRED CHECKS:
+- robust z-score of bar range
+- robust z-score of body size
+- repeated identical OHLC streak count
+- zero-volume abnormality
+- impossible timestamp density
+- abnormal gap cluster
+- broker-switch discontinuity
+- weekend/holiday abnormal insertions
+
+POLICY:
+- anomaly score below warn threshold -> PASS
+- anomaly score between warn and fail threshold -> WARN
+- anomaly score above fail threshold -> QUARANTINE
+
+IMPORTANT:
+These anomaly checks should be computed in Polars first for speed.
+GX then validates the resulting derived fields / thresholds as part of the contract decision.
+
+============================================================
+SECTION 8 — FOLDER STRUCTURE (LOCKED CANDIDATE)
+============================================================
+ROOT:
+C:\Data\Bot\Local_LLM\gold_research\intelligent_db_platform\
+
+01_config\
+- platform_config.yaml
+- source_registry.yaml
+- symbol_alias_registry.yaml
+- timeframe_registry.yaml
+- gx_contracts\
+- service_contracts\
+
+02_raw\
+- mt5_batches\YYYY\MM\DD\
+- manifests\
+- fingerprints\
+
+03_staging\
+- staging_pass\
+- staging_warn\
+- quarantine_rows\
+- quarantine_conflict\
+- validation_results\
+
+04_canonical\
+- bars\symbol=GOLD\tf=M1\year=2026\month=03\
+- bars\symbol=GOLD\tf=M2\...
+- manifests\
+- continuity_reports\
+- dataset_versions\
+
+05_features\
+- regime_features\
+- trend_features\
+- volatility_features\
+- micro_exit_features\
+
+06_labels\
+- entry_labels\
+- exit_labels\
+- trade_outcome_labels\
+- micro_exit_labels\
+
+07_backtests\
+- runs\
+- metrics\
+- surfaces\
+- walkforward\
+- monte_carlo\
+- validation_reports\
+
+08_registry\
+- strategy_registry.parquet
+- package_registry.parquet
+- feature_registry.parquet
+- label_registry.parquet
+- run_registry.parquet
+- dataset_registry.parquet
+- service_registry.parquet
+
+09_memory\
+- cases\
+- embeddings\
+- qdrant_exports\
+
+10_publish\
+- latest\
+- weekly\
+- bot_views\
+- sdk_cache\
+
+11_logs\
+- pipeline_logs\
+- access_logs\
+- audit_logs\
+
+12_docs\
+- progression\
+- step_updates\
+- strategy_logic_records\
+- governance\
+
+============================================================
+SECTION 9 — NAMING STANDARD
+============================================================
+RUN_ID FORMAT:
+{pipeline_name}__{utc_yyyymmdd_hhmmss}__{short_commit_or_version}
+
+EXAMPLES:
+ingest_mt5__20260320_104500__v1_0_0
+weekly_intelligence__20260320_230000__v1_5_0
+
+DATASET_VERSION FORMAT:
+ds_{symbol}_{tf}_{yyyymmdd}_{seq}
+
+PACKAGE_ID FORMAT:
+pkg_{entry_family}_{exit_family}_{tf}_{version}
+
+VALIDATION_ARTIFACT FORMAT:
+gx_validation__{dataset_name}__{run_id}.json
+
+QUARANTINE_ARTIFACT FORMAT:
+quarantine__{dataset_name}__{run_id}.parquet
+
+MANIFEST FORMAT:
+manifest__{pipeline_name}__{run_id}.json
+
+============================================================
+SECTION 10 — MANIFEST CONTRACT
+============================================================
+EVERY JOB MUST EMIT A MANIFEST JSON WITH:
+
+A. IDENTITY
+- run_id
+- pipeline_name
+- pipeline_version
+- git_commit if available
+- trigger_type (manual / schedule / dependency)
+- triggered_by
+
+B. INPUTS
+- source list
+- source batch ids
+- input paths
+- expected symbol/timeframe scope
+- data window start/end
+
+C. PROCESSING SUMMARY
+- rows_in
+- rows_pass
+- rows_warn
+- rows_fail
+- rows_quarantine
+- rows_written
+- duplicates_exact
+- duplicates_logical
+- conflicts_quarantined
+- continuity_status
+- anomaly_summary
+
+D. OUTPUTS
+- output paths
+- registry updates
+- published views
+- dataset versions
+- artifact paths
+
+E. QUALITY SUMMARY
+- gx_status
+- gx_suite_name
+- gx_failed_expectations
+- warning_count
+- fail_count
+- quarantine_count
+
+F. PERFORMANCE
+- start_ts_utc
+- end_ts_utc
+- duration_sec
+- cpu_sec
+- memory_peak_mb
+
+G. AUDIT
+- host
+- user
+- environment
+- hash_of_manifest_body
+
+============================================================
+SECTION 11 — ACCESS MODEL FOR MULTIPLE FUTURE BOTS
+============================================================
+11.1 PRINCIPLE
+The platform must support:
+- local bots
+- remote bots
+- research bots
+- execution bots
+- monitoring bots
+- reporting bots
+- LLM-driven bots
+- non-LLM rule-based bots
+
+11.2 ACCESS MODES
+MODE A: PYTHON SDK
+Use for:
+- same machine
+- low latency
+- research scripts
+- local execution engines
+
+MODE B: HTTP API
+Use for:
+- service decoupling
+- multi-bot access
+- future distributed architecture
+- language-agnostic clients
+
+MODE C: PUBLISHED PARQUET / DUCKDB VIEWS
+Use for:
+- analytics
+- dashboards
+- ad hoc exploration
+- offline audit
+
+11.3 NEVER ALLOW DIRECT WRITE FROM BOT TO CANONICAL TABLES
+Bot can only:
+- request data
+- submit trade outcomes
+- submit feedback artifacts
+- submit monitoring events
+
+Only platform pipelines can write:
+- canonical bars
+- labels
+- package registry
+- memory index
+- official intelligence snapshot
+
+============================================================
+SECTION 12 — BOT-FACING SERVICE CONTRACTS
+============================================================
+MINIMUM READ SERVICES:
+- get_latest_regime(symbol, tf)
+- get_active_package(symbol, tf, regime)
+- get_micro_exit_package(symbol, tf, regime)
+- get_similar_cases(symbol, tf, setup_signature, k)
+- get_current_risk_snapshot(symbol)
+- get_weekly_intelligence(symbol)
+- get_strategy_registry()
+- get_dataset_health(symbol, tf)
+
+MINIMUM WRITE SERVICES:
+- post_trade_open(payload)
+- post_trade_monitor(payload)
+- post_trade_close(payload)
+- post_llm_decision(payload)
+- post_execution_feedback(payload)
+- post_runtime_anomaly(payload)
+
+============================================================
+SECTION 13 — WEEKLY RUN SPEC
+============================================================
+WEEKLY MASTER PIPELINE:
+1. pull_new_mt5_batches
+2. fingerprint_raw_batches
+3. run_gx_contract_gate
+4. normalize_and_stage
+5. deterministic_dedup_and_canonical_write
+6. rebuild_impacted_timeframes
+7. refresh_features
+8. refresh_labels
+9. rerun_impacted_backtests
+10. rerun_walkforward_validation
+11. update_package_registry
+12. refresh_case_memory
+13. refresh_qdrant_index
+14. compare_live_vs_research
+15. publish_weekly_intelligence
+16. write_progression_update_txt
+
+SCHEDULE POLICY:
+- weekly full intelligence run after market close
+- optional daily ingest + incremental quality run
+- full historical rebuild only when core logic / contract / source mapping changes materially
+
+============================================================
+SECTION 14 — GOVERNANCE RULES
+============================================================
+RULE 1:
+No row enters Canonical DB without passing Layer 2 contract gate or explicit policy override.
+
+RULE 2:
+Policy overrides must be logged in manifest and quarantine ledger.
+
+RULE 3:
+Canonical data is append-safe and versioned. No silent overwrite.
+
+RULE 4:
+All downstream features, labels, backtests, and bot services must reference dataset_version.
+
+RULE 5:
+Bots are consumers, not owners, of official research truth.
+
+RULE 6:
+Observability tools are additive, not substitutes for deterministic core data engineering.
+
+============================================================
+SECTION 15 — RECOMMENDED IMPLEMENTATION ORDER
+============================================================
+A4.1
+Create folder skeleton and manifest contract
+
+A4.2
+Create GX contract suites for raw MT5 OHLCV
+
+A4.3
+Implement Polars normalization + anomaly feature columns
+
+A4.4
+Implement deterministic dedup engine in Polars/DuckDB
+
+A4.5
+Implement quarantine writer + duplicate ledger
+
+A4.6
+Implement canonical writer + dataset registry updater
+
+A4.7
+Implement SDK read services
+
+A4.8
+Implement HTTP API facade
+
+A4.9
+Add optional observability layer later if needed
+
+============================================================
+SECTION 16 — PROGRESSION CHECKLIST
+============================================================
+[ ] A4.1 folder skeleton locked
+[ ] A4.2 manifest contract locked
+[ ] A4.3 GX suite v1 created
+[ ] A4.4 anomaly thresholds defined
+[ ] A4.5 dedup precedence rules locked
+[ ] A4.6 quarantine schema locked
+[ ] A4.7 canonical writer spec locked
+[ ] A4.8 dataset registry spec locked
+[ ] A4.9 SDK read contract locked
+[ ] A4.10 HTTP API contract locked
+
+============================================================
+SECTION 17 — STEP UPDATE TEMPLATE
+============================================================
+STEP NAME:
+DATE:
+VERSION:
+STATUS: PASS / WARN / FAIL
+
+OBJECTIVE:
+INPUTS:
+LOGIC USED:
+RESULT:
+ROWS_IN:
+ROWS_PASS:
+ROWS_WARN:
+ROWS_FAIL:
+DUPLICATES_EXACT:
+DUPLICATES_LOGICAL:
+QUARANTINE_COUNT:
+DATASET_VERSION_CREATED:
+PACKAGE_OR_REGISTRY_UPDATED:
+ISSUES_FOUND:
+NEXT_STEP:
+
+============================================================
+SECTION 18 — FINAL LOCK STATEMENT
+============================================================
+LOCK STATEMENT:
+For this project, Layer 2 shall use Great Expectations as the embedded Data Contract Gate,
+while Polars + DuckDB remain the deterministic engine for normalization, anomaly scoring,
+row-level dedup, conflict resolution, and canonical writing.
+Soda is reserved as an optional future observability layer, not the primary critical-path
+contract gate for canonical ingestion in the current platform phase.

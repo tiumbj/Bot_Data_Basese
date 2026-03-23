@@ -1,0 +1,27 @@
+{
+  "version": "v1.0.0",
+  "selection_policy": {
+    "primary_goal": "robustness_over_single_peak_result",
+    "must_check": [
+      "net_profit",
+      "profit_factor",
+      "expectancy",
+      "max_drawdown",
+      "total_trades",
+      "win_rate",
+      "avg_win",
+      "avg_loss"
+    ],
+    "must_not_use": [
+      "profit_only",
+      "win_rate_only",
+      "single_parameter_peak_only"
+    ]
+  },
+  "ranking_template": {
+    "notes": [
+      "Do not select best strategy using only max profit.",
+      "Use stability zone and risk-adjusted evaluation."
+    ]
+  }
+}

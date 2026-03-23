@@ -1,0 +1,817 @@
+
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A6
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a6_pandera_schema_thresholds_v1_7_0.txt
+# เวอร์ชัน: v1.7.0
+# ============================================================
+
+INTELLIGENT DATABASE PLATFORM - PHASE A6
+Pandera Schema Specification + Threshold Table + Quarantine Trigger
+For MT5 OHLCV Canonical Ingest and Weekly Intelligence Pipeline
+Version: v1.7.0
+
+============================================================
+0) OBJECTIVE
+============================================================
+เอกสารนี้กำหนด technical spec ระดับพร้อมลงมือจริงสำหรับ:
+
+1. free-only data contract layer
+2. Pandera schema สำหรับ MT5 OHLCV
+3. threshold table สำหรับ anomaly detection
+4. quarantine trigger policy
+5. mapping เข้า weekly run pipeline
+6. service/access model ที่ยืดหยุ่นเพื่อรองรับหลาย bot ในอนาคต
+
+LOCK DECISION
+- Primary contract gate = Pandera
+- Hot-path dataframe engine = Polars
+- Deterministic dedup + conflict resolver = custom logic บน Polars/DuckDB
+- Analytical metadata + audit registry = DuckDB
+- Central storage = Parquet
+- Optional artifact/report layer = Great Expectations Core (ไม่อยู่ใน critical path)
+
+============================================================
+1) WHY THIS STACK
+============================================================
+1.1 Pandera
+- ฟรี
+- ใช้ใน Python ได้ตรง
+- รองรับหลาย dataframe libraries
+- รองรับ Polars
+- เหมาะกับ schema + validation checks + fail-fast gate
+
+1.2 Polars
+- เร็วมากสำหรับ local analytical pipeline
+- เหมาะกับ deterministic ingest, sort, group, resample, dedup
+- ช่วยให้ hot path คุม performance ได้ดี
+
+1.3 DuckDB
+- เหมาะกับ analytical metadata, audit tables, registry, and parquet query
+- ง่ายต่อการ query ข้าม artifacts และสร้าง weekly summary
+
+1.4 Great Expectations Core
+- ใช้เป็น reporting/artifact layer ได้
+- ไม่ควรวางเป็นตัวหลักใน hot path ของ ingest gate
+- ใช้ภายหลังสำหรับ human-readable validation artifacts ได้
+
+============================================================
+2) PLATFORM BOUNDARY
+============================================================
+A. Intelligent Database Platform
+หน้าที่:
+- ingest MT5 bars
+- canonicalize dataset
+- run schema contract
+- run deterministic dedup
+- quarantine anomaly/conflict rows
+- rebuild affected timeframes
+- run backtest
+- refresh labels
+- refresh memory cases
+- refresh retrieval index
+- publish weekly intelligence
+- expose service to bots
+
+B. Bot Runtime Platform
+หน้าที่:
+- request market intelligence
+- request approved strategy packages
+- request similar historical cases
+- generate candidate signal
+- send signal context to local LLM
+- receive final confirm
+- execute via MT5
+- stream order lifecycle feedback back to central platform
+
+============================================================
+3) DATA FLOW
+============================================================
+Step 1  MT5 raw bars arrive
+Step 2  raw batch fingerprint generated
+Step 3  raw batch written to raw landing zone
+Step 4  schema normalization executed
+Step 5  Pandera contract validation executed
+Step 6  deterministic dedup + conflict resolution executed
+Step 7  accepted rows written to canonical M1 parquet
+Step 8  rejected/warn rows written to quarantine zone
+Step 9  impacted timeframes rebuilt deterministically
+Step 10 feature store refreshed
+Step 11 weekly backtest/validation pipeline executed
+Step 12 labels + case memory + retrieval index refreshed
+Step 13 weekly intelligence snapshot published
+Step 14 bot-facing service layer refreshed
+
+============================================================
+4) CANONICAL OHLCV SCHEMA
+============================================================
+Canonical table name:
+canonical_ohlcv_m1
+
+Required fields:
+- symbol: string
+- venue: string
+- source_system: string
+- timeframe: string
+- ts_utc: timestamp[UTC]
+- open: float64
+- high: float64
+- low: float64
+- close: float64
+- tick_volume: int64
+- spread_points: int32 nullable
+- real_volume: int64 nullable
+- ingest_run_id: string
+- source_file_id: string nullable
+- source_row_number: int64 nullable
+- logical_key: string
+- row_hash: string
+- batch_fingerprint: string
+- ingest_ts_utc: timestamp[UTC]
+- quality_status: string
+- quality_score: float64
+- continuity_status: string
+- conflict_status: string nullable
+- anomaly_flags: list[string] nullable
+
+Field meanings:
+- logical_key = symbol|venue|timeframe|ts_utc
+- row_hash = hash ของ row payload ที่ normalized แล้ว
+- batch_fingerprint = hash ของ raw batch
+- quality_status = PASS/WARN/FAIL/QUARANTINE
+- continuity_status = OK/GAP/DUPLICATE/REPAIRED/CONFLICT
+- conflict_status = NONE/HASH_MISMATCH/OHLCV_MISMATCH/LATE_REPLACEMENT
+
+============================================================
+5) NORMALIZATION RULES BEFORE VALIDATION
+============================================================
+5.1 Time
+- ทุก timestamp ต้องแปลงเป็น UTC ก่อน
+- ห้ามเก็บ naive datetime ใน canonical layer
+- canonical output เก็บ ts_utc เท่านั้น
+
+5.2 Symbol and timeframe
+- symbol uppercase
+- timeframe normalized เป็นหนึ่งใน:
+  M1 M2 M3 M4 M5 M6 M10 M15 M30 H1 H4 D1
+- ingest row-level raw bars เริ่มที่ M1 เท่านั้น
+- TF อื่นเป็น derived deterministic products
+
+5.3 Numeric normalization
+- open/high/low/close cast เป็น float64
+- tick_volume cast เป็น int64
+- spread_points cast เป็น int32 nullable
+- real_volume cast เป็น int64 nullable
+
+5.4 Sorting
+- sort by symbol, venue, timeframe, ts_utc, ingest_ts_utc
+
+5.5 Null policy
+- open/high/low/close/tick_volume/ts_utc/symbol/timeframe null = FAIL
+- spread_points/real_volume nullable ได้ แต่ต้องถูก normalize
+
+============================================================
+6) PANDERA CONTRACT SPEC
+============================================================
+6.1 Table-level contract
+Contract name:
+mt5_canonical_ohlcv_m1_contract
+
+Severity levels:
+- PASS
+- WARN
+- FAIL
+- QUARANTINE
+
+Decision rule:
+- FAIL และ QUARANTINE ไม่เข้า canonical DB
+- WARN เข้าได้ แต่ต้องถูก audit
+- PASS เข้าได้ทันที
+
+6.2 Column-level checks
+A. symbol
+- type: str
+- not null
+- in allowed symbol registry
+- regex: ^[A-Z0-9_\.\-]+$
+
+B. venue
+- type: str
+- not null
+- allowed list by broker registry
+
+C. source_system
+- type: str
+- not null
+- allowed list: MT5, IMPORTED_MT5
+
+D. timeframe
+- type: str
+- not null
+- fixed to M1 for raw canonical ingest table
+
+E. ts_utc
+- type: datetime
+- not null
+- tz-aware UTC required
+- unique within logical key scope
+- aligned to 1-minute boundary
+
+F. open
+- float64
+- not null
+- > 0
+
+G. high
+- float64
+- not null
+- > 0
+
+H. low
+- float64
+- not null
+- > 0
+
+I. close
+- float64
+- not null
+- > 0
+
+J. tick_volume
+- int64
+- not null
+- >= 0
+
+K. spread_points
+- int32 nullable
+- if present, >= 0
+- upper anomaly threshold monitored separately
+
+L. real_volume
+- int64 nullable
+- if present, >= 0
+
+M. ingest_run_id
+- str
+- not null
+
+N. logical_key
+- str
+- not null
+
+O. row_hash
+- str
+- not null
+- fixed hash length based on selected hash algorithm
+
+P. batch_fingerprint
+- str
+- not null
+
+Q. quality_status
+- str
+- allowed values PASS/WARN/FAIL/QUARANTINE
+
+R. quality_score
+- float64
+- range [0, 1]
+
+S. continuity_status
+- str
+- allowed values OK/GAP/DUPLICATE/REPAIRED/CONFLICT
+
+T. conflict_status
+- nullable str
+- allowed values NONE/HASH_MISMATCH/OHLCV_MISMATCH/LATE_REPLACEMENT
+
+6.3 Cross-column checks
+- high >= max(open, close, low)
+- low <= min(open, close, high)
+- high >= low
+- candle_range = high - low >= 0
+- body_abs = abs(close - open) <= candle_range
+- zero-range candle allowed only as WARN if open==high==low==close and tick_volume==0
+- future timestamp beyond ingest time tolerance = FAIL
+- ts_utc minute alignment required = FAIL
+
+============================================================
+7) THRESHOLD TABLE
+============================================================
+Thresholds must be dynamic by:
+- symbol
+- trading session bucket
+- weekday
+- rolling lookback window
+- market regime bucket (later phase)
+
+Base threshold design:
+- do not use one global hardcoded threshold for all periods
+- use rolling robust statistics
+
+7.1 Rolling windows
+Fast window:
+- 1 trading day
+
+Short window:
+- 5 trading days
+
+Medium window:
+- 20 trading days
+
+Long window:
+- 60 trading days
+
+7.2 Robust metrics
+Use:
+- median
+- MAD (median absolute deviation)
+- percentile bands
+- z-like robust score based on MAD
+
+7.3 Monitored signals
+Per-row derived metrics:
+- candle_range = high - low
+- body_abs = abs(close - open)
+- upper_wick = high - max(open, close)
+- lower_wick = min(open, close) - low
+- spread_to_range = spread_points / max(candle_range, epsilon)
+- volume_jump_ratio = tick_volume / rolling_median_volume
+- range_jump_ratio = candle_range / rolling_median_range
+- close_gap_abs = abs(close_t - close_t-1)
+- gap_to_range_ratio = close_gap_abs / max(rolling_median_range, epsilon)
+
+7.4 Severity policy
+PASS:
+- inside expected hard constraints and robust band
+
+WARN:
+- passes hard constraints but exceeds soft robust threshold
+- row can enter canonical DB with anomaly_flags
+
+FAIL:
+- violates deterministic structural rule
+- row blocked from canonical DB
+
+QUARANTINE:
+- violates severe anomaly or conflict rule
+- row stored in quarantine and requires later review/reconciliation
+
+============================================================
+8) DEFAULT ANOMALY RULES
+============================================================
+Rule A: Structural OHLC violation
+Condition:
+- high < open OR high < close OR high < low
+- low > open OR low > close OR low > high
+Action:
+- FAIL
+
+Rule B: Non-positive prices
+Condition:
+- any(open, high, low, close) <= 0
+Action:
+- FAIL
+
+Rule C: ts not aligned to minute
+Condition:
+- second != 0 or microsecond != 0
+Action:
+- FAIL
+
+Rule D: future timestamp
+Condition:
+- ts_utc > ingest_ts_utc + tolerated_clock_skew
+Default skew:
+- 120 seconds
+Action:
+- FAIL
+
+Rule E: zero-volume flat bar
+Condition:
+- open==high==low==close and tick_volume==0
+Action:
+- WARN
+Reason:
+- may occur during market inactivity; do not auto-drop
+
+Rule F: extreme range spike
+Condition:
+- range_jump_ratio > 8 on fast window
+Action:
+- WARN first
+- QUARANTINE if also spread anomaly or conflicting duplicate exists
+
+Rule G: extreme volume spike
+Condition:
+- volume_jump_ratio > 12 on short window
+Action:
+- WARN
+- QUARANTINE if repeated cluster >= 3 consecutive rows
+
+Rule H: spread explosion
+Condition:
+- spread_points > rolling_p99_spread * 3
+Action:
+- WARN
+- QUARANTINE if spread_to_range > 0.8
+
+Rule I: duplicate same logical key same row hash
+Condition:
+- same logical_key and same row_hash already exists
+Action:
+- mark duplicate
+- drop from canonical write
+- audit only
+
+Rule J: duplicate same logical key different row hash
+Condition:
+- same logical_key but row_hash differs
+Action:
+- QUARANTINE
+- conflict_status = HASH_MISMATCH
+- do not overwrite canonical automatically
+
+Rule K: continuity gap
+Condition:
+- expected next minute missing in raw ingest sequence
+Action:
+- WARN
+- continuity_status = GAP
+- trigger gap repair workflow later
+
+Rule L: late replacement packet
+Condition:
+- same ts_utc re-arrives after canonical write with different OHLCV payload
+Action:
+- QUARANTINE
+- conflict_status = LATE_REPLACEMENT
+
+============================================================
+9) DEDUP AND UPSERT POLICY
+============================================================
+9.1 Dedup priority
+Priority order:
+1. logical_key exact duplicate + same row_hash => ignore write
+2. logical_key duplicate + different row_hash => quarantine conflict
+3. batch already seen by batch_fingerprint => skip full batch
+4. source_file_id + source_row_number duplicate => audit duplicate source
+
+9.2 Canonical write rule
+Only rows with:
+- PASS
+- WARN
+and no hash conflict
+may enter canonical DB
+
+9.3 Overwrite policy
+Canonical row is immutable by default
+Exception:
+- only approved repair workflow can supersede a quarantined conflict
+- every replacement must preserve original row in audit history
+
+9.4 Audit trail
+Every decision writes to audit registry:
+- run_id
+- logical_key
+- row_hash
+- action_taken
+- decision_reason
+- previous_row_hash
+- new_row_hash
+- operator = SYSTEM/AUTO_REPAIR/MANUAL_REVIEW
+
+============================================================
+10) QUARANTINE ZONE DESIGN
+============================================================
+Storage:
+- parquet files partitioned by date/run_id/reason
+- DuckDB registry table for searchability
+
+Quarantine reasons:
+- SCHEMA_FAIL
+- STRUCTURAL_FAIL
+- HASH_CONFLICT
+- LATE_REPLACEMENT
+- EXTREME_RANGE
+- EXTREME_SPREAD
+- EXTREME_VOLUME_CLUSTER
+- FUTURE_TIMESTAMP
+- MINUTE_ALIGNMENT_FAIL
+- UNKNOWN_SYMBOL
+- UNKNOWN_VENUE
+
+Required quarantine fields:
+- raw_payload_json
+- normalized_payload_json
+- reason_code
+- severity
+- detected_at_utc
+- ingest_run_id
+- logical_key
+- row_hash
+- batch_fingerprint
+- suggested_action
+- reviewed_flag
+- reviewed_by
+- review_ts_utc
+- resolution_note
+
+============================================================
+11) DETERMINISTIC RESAMPLING RULES
+============================================================
+Derived timeframes:
+M2 M3 M4 M5 M6 M10 M15 M30 H1 H4 D1
+
+Resample aggregation:
+- open = first(open)
+- high = max(high)
+- low = min(low)
+- close = last(close)
+- tick_volume = sum(tick_volume)
+- real_volume = sum(real_volume)
+- spread_points = max(spread_points) or null-safe aggregate chosen by policy
+
+Resample preconditions:
+- source M1 continuity status must be acceptable
+- if gap exceeds threshold inside bucket:
+  - mark derived bar quality_status = WARN or FAIL by severity
+- derived bars keep lineage fields:
+  - source_start_ts_utc
+  - source_end_ts_utc
+  - source_row_count
+  - source_gap_count
+  - source_quality_rollup
+
+============================================================
+12) WEEKLY PIPELINE MAPPING
+============================================================
+Weekly run master order:
+
+Stage W1
+- pull latest MT5 M1 bars
+
+Stage W2
+- compute batch fingerprint
+- reject exact known batch
+
+Stage W3
+- normalize raw schema
+
+Stage W4
+- apply Pandera contract
+
+Stage W5
+- apply deterministic dedup/conflict resolver
+
+Stage W6
+- write PASS/WARN rows to canonical M1
+- write FAIL/QUARANTINE rows to quarantine
+
+Stage W7
+- rebuild impacted derived timeframes only
+
+Stage W8
+- refresh feature store tables
+
+Stage W9
+- refresh strategy backtest windows
+
+Stage W10
+- refresh validation artifacts
+
+Stage W11
+- refresh labels and outcome taxonomy
+
+Stage W12
+- refresh memory cases and vector index
+
+Stage W13
+- refresh package registry
+
+Stage W14
+- publish weekly intelligence snapshot + progression update text
+
+============================================================
+13) BOT ACCESS MODEL
+============================================================
+13.1 Access patterns
+Support 2 modes:
+- Local Python SDK
+- HTTP API
+
+Reason:
+- SDK เร็วสำหรับ bot ภายในเครื่องเดียวกัน
+- HTTP API ยืดหยุ่นสำหรับหลาย bot หลายภาษา หรือแยก service ภายหลัง
+
+13.2 Bot-facing services
+- get_latest_regime_snapshot()
+- get_approved_strategy_packages(tf, symbol)
+- get_micro_exit_package(tf, symbol)
+- get_similar_cases(context, top_k)
+- get_risk_flags(symbol)
+- submit_trade_feedback(payload)
+- get_weekly_intelligence(symbol)
+
+13.3 Response design
+ทุก response ต้องมี:
+- as_of_utc
+- data_version
+- run_id
+- source_scope
+- confidence or quality markers if applicable
+
+============================================================
+14) DUCKDB REGISTRY TABLES
+============================================================
+Core registry tables:
+- ingest_run_registry
+- raw_batch_registry
+- canonical_write_audit
+- quarantine_registry
+- continuity_registry
+- timeframe_build_registry
+- backtest_run_registry
+- label_refresh_registry
+- memory_refresh_registry
+- publish_registry
+- bot_feedback_registry
+
+Minimum fields in ingest_run_registry:
+- ingest_run_id
+- started_at_utc
+- finished_at_utc
+- symbol
+- source_system
+- rows_received
+- rows_pass
+- rows_warn
+- rows_fail
+- rows_quarantine
+- duplicate_rows
+- conflict_rows
+- status
+- notes
+
+============================================================
+15) QUALITY SCORING
+============================================================
+Recommended quality score:
+Start at 1.0 and subtract penalties
+
+Example penalty model:
+- soft anomaly warn: -0.10 each
+- continuity gap involvement: -0.20
+- spread explosion: -0.15
+- range spike: -0.15
+- duplicate exact: no canonical write
+- hash conflict: quarantine, score 0
+
+Interpretation:
+- 0.90 to 1.00 = high trust
+- 0.75 to 0.89 = usable with caution
+- 0.50 to 0.74 = weak quality
+- below 0.50 = quarantine candidate
+
+============================================================
+16) PERFORMANCE PRINCIPLES
+============================================================
+- Hot path first: normalize -> contract -> dedup -> write
+- Avoid heavy reporting in hot path
+- Use columnar parquet partitions by symbol/year/month
+- Use DuckDB for audits and weekly summaries
+- Use incremental rebuild only for impacted time buckets
+- Keep contract execution deterministic and reproducible
+- Prefer robust statistics over naive mean/std due to fat-tail market data
+
+============================================================
+17) GOVERNANCE LOCK
+============================================================
+LOCK 1
+Pandera is the primary free contract gate
+
+LOCK 2
+Dedup/conflict resolution remains custom and deterministic in Polars/DuckDB
+
+LOCK 3
+Great Expectations Core may be added only as optional artifact/report layer
+
+LOCK 4
+Soda is not part of the critical-path architecture
+
+LOCK 5
+Canonical DB accepts only PASS/WARN rows with no conflict
+
+LOCK 6
+All FAIL/QUARANTINE rows must be retained in quarantine/audit history
+
+LOCK 7
+Derived timeframes must be deterministic products of canonical M1
+
+LOCK 8
+All research timeframes remain mandatory:
+M1 M2 M3 M4 M5 M6 M10 M15 M30 H1 H4 D1
+
+LOCK 9
+Micro exit remains mandatory base layer for every research timeframe
+
+============================================================
+18) PROGRESSION CHECKLIST
+============================================================
+[ ] A6.1 Lock canonical M1 field list
+[ ] A6.2 Lock logical_key and row_hash standard
+[ ] A6.3 Lock Pandera contract classes
+[ ] A6.4 Lock severity model PASS/WARN/FAIL/QUARANTINE
+[ ] A6.5 Lock threshold computation windows
+[ ] A6.6 Lock quarantine reason taxonomy
+[ ] A6.7 Lock immutable canonical write policy
+[ ] A6.8 Lock impacted-timeframe rebuild policy
+[ ] A6.9 Lock bot access response envelope
+[ ] A6.10 Lock DuckDB registry tables
+[ ] A6.11 Lock weekly run stage mapping
+[ ] A6.12 Lock quality scoring policy
+
+============================================================
+19) STEP UPDATE TEMPLATE
+============================================================
+STEP UPDATE
+- step_id:
+- title:
+- version:
+- date_utc:
+- objective:
+- files_created:
+- files_updated:
+- data_inputs:
+- contract_changes:
+- threshold_changes:
+- quarantine_changes:
+- registry_changes:
+- result_summary:
+- risk_found:
+- decision:
+- next_step:
+
+============================================================
+20) STRATEGY / LOGIC RECORD TEMPLATE
+============================================================
+STRATEGY LOGIC RECORD
+- record_id:
+- strategy_family:
+- entry_logic:
+- exit_logic:
+- micro_exit_logic:
+- timeframes_covered:
+- market_regime_scope:
+- feature_dependencies:
+- labels_used:
+- backtest_windows:
+- validation_result:
+- approved_status:
+- package_id:
+- notes:
+
+============================================================
+21) IMPLEMENTATION ORDER
+============================================================
+Step 1
+Implement canonical schema constants
+
+Step 2
+Implement Pandera contract model/classes
+
+Step 3
+Implement normalization helpers
+
+Step 4
+Implement logical_key/row_hash builders
+
+Step 5
+Implement dedup/conflict resolver
+
+Step 6
+Implement quarantine writer + DuckDB registry append
+
+Step 7
+Implement canonical parquet writer
+
+Step 8
+Implement derived timeframe rebuild module
+
+Step 9
+Implement weekly pipeline orchestrator wiring
+
+Step 10
+Implement bot-facing SDK/API contract adapters
+
+============================================================
+22) FINAL DECISION
+============================================================
+แนวทางที่ถูกต้องที่สุดตอนนี้คือ:
+
+ใช้ Pandera เป็นฟรี contract gate หลัก
+ใช้ Polars + custom deterministic dedup เป็นเครื่องยนต์หลักของ Layer 2
+ใช้ DuckDB เป็น audit/registry/query layer
+เก็บ Canonical DB เป็น Parquet
+เก็บ quarantine และ lineage ให้ครบ
+เสิร์ฟข้อมูลผ่าน SDK + HTTP API เพื่อรองรับหลาย bot ในอนาคต
+
+นี่คือโครงที่เร็ว, ฟรี, เชื่อถือได้, ขยายง่าย, และไม่ผูกกับระบบเสียเงิน

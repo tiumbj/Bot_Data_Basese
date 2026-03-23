@@ -1,0 +1,50 @@
+# version: v1.0.0
+# file: C:\Data\Bot\Local_LLM\gold_research\jobs\research_requirements_m30_deep_pullback.yaml
+project:
+  project_id: gold_research_m30_deep_pullback_v1
+  project_name: Gold Research M30 Deep Pullback Focused Batch
+  version: v1.0.0
+
+paths:
+  output_root: C:\Data\Bot\central_backtest_results\research_m30_deep_pullback
+  manifest_jsonl: C:\Data\Bot\central_backtest_results\research_jobs\research_job_manifest_m30_deep_pullback.jsonl
+  manifest_summary_json: C:\Data\Bot\central_backtest_results\research_jobs\research_job_manifest_m30_deep_pullback_summary.json
+  state_jsonl: C:\Data\Bot\central_backtest_results\research_jobs\job_state_m30_deep_pullback.jsonl
+
+dataset:
+  symbol: XAUUSD
+  timeframe: M30
+  ohlc_csv: C:\Data\Bot\central_market_data\tf\XAUUSD_M30.csv
+
+selection:
+  stage_name: stage_1_scan
+  family_id: deep_pullback_continuation
+  strategy_id: locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+  entry_style: deep
+  expected_jobs: 27
+
+variants:
+  micro_exit_ids:
+    - micro_exit_v2_fast_invalidation
+    - micro_exit_v2_momentum_fade
+    - micro_exit_v2_structure_trail
+  cooldown_bars:
+    - 0
+    - 3
+    - 6
+  regime_filter_ids:
+    - regime_filter_off
+    - regime_filter_trend_only
+    - regime_filter_trend_or_neutral
+
+defaults:
+  risk_model_id: fixed_fractional_1pct
+  execution_model_id: next_bar_market
+  spread_model_id: static_spread_baseline
+  slippage_model_id: static_slippage_baseline
+  train_window_id: insample
+  validation_mode: insample
+  tags:
+    - focused_batch
+    - m30_only
+    - deep_pullback_only

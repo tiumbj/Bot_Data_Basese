@@ -1,0 +1,714 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A16 Bootstrap Base Modules Spec
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a16_bootstrap_base_modules_spec_v2_7_0.txt
+# เวอร์ชัน: v2.7.0
+# ============================================================
+
+TITLE
+Intelligent Database Platform - Phase A16 Bootstrap Base Modules Spec
+Version: v2.7.0
+Status: APPROVED_FOR_IMPLEMENTATION_SPEC
+Scope: Bootstrap foundation modules required before registry, ingest, canonical DB, service, and weekly intelligence implementation.
+
+====================================================================
+1. PURPOSE
+====================================================================
+This document defines the minimal but production-solid bootstrap modules required before implementing the rest of the Intelligent Database Platform.
+
+These modules must establish:
+- stable project identity
+- deterministic configuration loading
+- consistent error taxonomy
+- centralized logging behavior
+- environment detection
+- startup validation
+- filesystem bootstrap
+- runtime manifest emission
+- safe initialization order
+
+A16 exists to prevent later implementation drift.
+
+====================================================================
+2. DESIGN PRINCIPLE
+====================================================================
+Bootstrap modules must be:
+- small
+- deterministic
+- dependency-light
+- fail-fast
+- environment-safe
+- reusable by every later subsystem
+
+Bootstrap modules are NOT allowed to contain business logic.
+They only provide foundation services.
+
+====================================================================
+3. REQUIRED BASE MODULES
+====================================================================
+The first implementation batch must include exactly these modules:
+
+1) src/gold_research_platform/version.py
+2) src/gold_research_platform/constants.py
+3) src/gold_research_platform/exceptions.py
+4) src/gold_research_platform/settings.py
+5) src/gold_research_platform/logging_config.py
+6) src/gold_research_platform/init_platform.py
+7) src/gold_research_platform/runtime_manifest.py
+8) src/gold_research_platform/paths.py
+9) src/gold_research_platform/env.py
+10) src/gold_research_platform/health/startup_checks.py
+
+Optional but recommended in same batch:
+11) src/gold_research_platform/typing_aliases.py
+12) src/gold_research_platform/build_info.py
+
+====================================================================
+4. TARGET FOLDER STRUCTURE
+====================================================================
+Recommended initial structure:
+
+src/
+  gold_research_platform/
+    __init__.py
+    version.py
+    constants.py
+    exceptions.py
+    settings.py
+    logging_config.py
+    init_platform.py
+    runtime_manifest.py
+    paths.py
+    env.py
+    typing_aliases.py
+    build_info.py
+    health/
+      __init__.py
+      startup_checks.py
+
+config/
+  platform.env.example
+  logging.yaml
+
+runtime/
+  logs/
+  manifests/
+  pids/
+  tmp/
+
+state/
+  active_snapshot/
+
+registry/
+  staging/
+  snapshots/
+  manifests/
+
+storage/
+  raw/
+  canonical/
+  quarantine/
+  features/
+  backtests/
+  labels/
+  published/
+
+====================================================================
+5. MODULE-BY-MODULE SPEC
+====================================================================
+
+--------------------------------------------------
+5.1 version.py
+--------------------------------------------------
+Purpose:
+- expose platform version and component versions
+- provide one canonical version source
+
+Must contain:
+- PLATFORM_NAME
+- PLATFORM_VERSION
+- PLATFORM_SERIES
+- REGISTRY_SCHEMA_VERSION
+- CONFIG_SCHEMA_VERSION
+- BUILD_CHANNEL
+
+Rules:
+- constants only
+- no environment reads
+- no imports from settings
+
+Example output contract:
+{
+  "platform_name": "gold_research_platform",
+  "platform_version": "v2.7.0",
+  "platform_series": "v2",
+  "registry_schema_version": "v1",
+  "config_schema_version": "v1",
+  "build_channel": "production"
+}
+
+--------------------------------------------------
+5.2 constants.py
+--------------------------------------------------
+Purpose:
+- centralize stable literals used across modules
+
+Must include:
+- supported timeframes list
+- canonical symbol list
+- default timezone = UTC
+- allowed environment names
+- severity names
+- lifecycle state names
+- default directory names
+- standard filename suffixes
+- default hashing algorithm names
+- default snapshot labels
+
+Rules:
+- no mutable runtime state
+- no file I/O
+- no environment reads
+
+Examples:
+SUPPORTED_TIMEFRAMES = ["M1","M2","M3","M4","M5","M6","M10","M15","M30","H1","H4","D1"]
+HASH_ALGO_SHA256 = "sha256"
+SEVERITY_PASS = "PASS"
+SEVERITY_WARN = "WARN"
+SEVERITY_FAIL = "FAIL"
+SEVERITY_QUARANTINE = "QUARANTINE"
+
+--------------------------------------------------
+5.3 exceptions.py
+--------------------------------------------------
+Purpose:
+- define typed platform exceptions
+- allow precise fail-fast handling
+
+Required base exceptions:
+- PlatformError
+- ConfigurationError
+- StartupValidationError
+- FilesystemBootstrapError
+- LoggingSetupError
+- RegistryBootstrapError
+- SnapshotActivationError
+- ChecksumMismatchError
+- UnsupportedEnvironmentError
+- MissingRequiredPathError
+- InvalidRuntimeStateError
+
+Rules:
+- each exception must carry machine-friendly code
+- each exception must support human-readable message
+- no side effects
+
+Recommended exception fields:
+- error_code
+- message
+- context dict
+
+--------------------------------------------------
+5.4 settings.py
+--------------------------------------------------
+Purpose:
+- load and validate runtime settings
+- produce immutable config object for the whole application
+
+Recommended technology:
+- Pydantic Settings / pydantic-based config model
+
+Must support:
+- .env loading
+- environment variable override
+- default values
+- strict validation
+- computed paths
+- read-only final settings object
+
+Required setting groups:
+A. platform identity
+- APP_NAME
+- APP_ENV
+- APP_INSTANCE_ID
+- APP_NODE_ROLE
+
+B. path roots
+- PROJECT_ROOT
+- RUNTIME_DIR
+- STORAGE_DIR
+- REGISTRY_DIR
+- CONFIG_DIR
+- STATE_DIR
+
+C. registry behavior
+- REGISTRY_ENABLE_HOT_RELOAD
+- REGISTRY_RELOAD_INTERVAL_SEC
+- REGISTRY_MANIFEST_PATH
+- REGISTRY_ACTIVE_SNAPSHOT_DIR
+
+D. storage behavior
+- CANONICAL_STORAGE_ROOT
+- QUARANTINE_STORAGE_ROOT
+- FEATURE_STORAGE_ROOT
+- BACKTEST_STORAGE_ROOT
+- LABEL_STORAGE_ROOT
+- PUBLISHED_STORAGE_ROOT
+
+E. service behavior
+- SERVICE_MODE
+- SERVICE_HOST
+- SERVICE_PORT
+- API_KEY_ENABLED
+- API_KEY_VALUE
+
+F. logging behavior
+- LOG_LEVEL
+- LOG_JSON
+- LOG_DIR
+- LOG_ROTATION_MB
+- LOG_RETENTION_DAYS
+
+G. runtime behavior
+- FAIL_FAST_ON_STARTUP_CHECKS
+- STARTUP_EMIT_MANIFEST
+- STARTUP_CREATE_DIRS
+- STARTUP_VALIDATE_WRITABILITY
+
+Rules:
+- final config object must be immutable after load
+- settings load must happen once
+- settings module must expose a cached accessor
+- invalid config must stop startup immediately
+
+--------------------------------------------------
+5.5 logging_config.py
+--------------------------------------------------
+Purpose:
+- provide centralized logging init for all modules
+
+Must support:
+- JSON logs for production
+- text logs for local debug
+- stdout handler
+- rotating file handler
+- component logger naming
+- per-run correlation id
+- startup summary log
+
+Required behaviors:
+- idempotent logger initialization
+- no duplicate handlers on repeated import
+- UTC timestamps
+- structured extra fields support
+
+Recommended structured fields:
+- ts
+- level
+- logger
+- event
+- component
+- run_id
+- environment
+- version
+- correlation_id
+
+Rules:
+- bootstrap logging must work before full settings are active when possible
+- must expose configure_logging(settings)
+- must expose get_logger(name)
+
+--------------------------------------------------
+5.6 paths.py
+--------------------------------------------------
+Purpose:
+- centralize path creation and path resolution
+
+Must expose:
+- resolve_project_root()
+- build_runtime_paths(settings)
+- build_storage_paths(settings)
+- build_registry_paths(settings)
+- ensure_required_directories(paths)
+- validate_paths_writable(paths)
+
+Rules:
+- all paths returned as pathlib.Path
+- no silent fallback to wrong directories
+- must detect path traversal or invalid relative root config
+- must support Windows path behavior because project runs on Windows
+
+--------------------------------------------------
+5.7 env.py
+--------------------------------------------------
+Purpose:
+- detect runtime environment characteristics
+
+Must expose:
+- detect_os_family()
+- detect_python_version()
+- detect_working_directory()
+- detect_hostname()
+- detect_containerized_runtime()
+- detect_ci_runtime()
+
+Purpose usage:
+- logs
+- manifests
+- startup diagnostics
+- support investigation
+
+Rules:
+- no heavy dependency
+- read-only helpers only
+
+--------------------------------------------------
+5.8 runtime_manifest.py
+--------------------------------------------------
+Purpose:
+- emit startup manifest that records exact runtime identity
+
+Manifest must contain:
+- platform version
+- config schema version
+- registry schema version
+- environment
+- startup timestamp UTC
+- hostname
+- python version
+- working directory
+- selected config values (safe subset only)
+- active paths
+- enabled service modes
+- git commit hash if available
+- manifest checksum
+
+Output location:
+- runtime/manifests/startup_manifest_<timestamp>_<instance>.json
+
+Rules:
+- sensitive values must never be written
+- manifest emission should happen after startup checks pass
+- manifest should be append-safe and uniquely named
+
+--------------------------------------------------
+5.9 health/startup_checks.py
+--------------------------------------------------
+Purpose:
+- run startup validation before platform becomes active
+
+Required checks:
+1. required config fields present
+2. supported environment name
+3. required directories exist or can be created
+4. required directories writable
+5. registry manifest path exists
+6. logging path writable
+7. timeframes list non-empty and valid
+8. platform version string valid
+9. service port valid if service enabled
+10. api key requirements consistent
+11. runtime temp directory writable
+12. no invalid overlap of root directories
+
+Output:
+- structured StartupCheckReport
+
+Rules:
+- each check returns pass/fail with code
+- fail-fast if configured
+- warnings allowed but must be logged
+
+--------------------------------------------------
+5.10 init_platform.py
+--------------------------------------------------
+Purpose:
+- single bootstrap entrypoint used by later jobs/services
+
+Must orchestrate:
+1. load raw environment
+2. load settings
+3. configure logging
+4. resolve paths
+5. create required directories
+6. run startup checks
+7. emit runtime manifest
+8. return immutable bootstrap context
+
+Must return:
+BootstrapContext with fields:
+- settings
+- paths
+- logger
+- startup_report
+- runtime_manifest_path
+- platform_version
+- correlation_id
+- started_at_utc
+
+Rules:
+- no registry load yet
+- no service start yet
+- no ingest/backtest logic here
+- must be safe to call from CLI jobs and API entrypoint
+
+====================================================================
+6. DEPENDENCY MAP
+====================================================================
+Allowed dependency direction:
+
+version.py -> none
+constants.py -> none
+exceptions.py -> none or constants.py only
+paths.py -> constants.py, exceptions.py
+env.py -> stdlib only
+settings.py -> version.py, constants.py, exceptions.py
+logging_config.py -> settings.py optional, version.py, env.py
+startup_checks.py -> settings.py, paths.py, exceptions.py, constants.py
+runtime_manifest.py -> version.py, settings.py, env.py, paths.py
+init_platform.py -> all bootstrap modules above
+
+Forbidden:
+- bootstrap modules importing registry modules
+- bootstrap modules importing ingest/backtest/service business logic
+- cyclic imports
+
+====================================================================
+7. BOOTSTRAP ORDER
+====================================================================
+Exact order to implement and test:
+
+Step 1: version.py
+Step 2: constants.py
+Step 3: exceptions.py
+Step 4: env.py
+Step 5: paths.py
+Step 6: settings.py
+Step 7: logging_config.py
+Step 8: startup_checks.py
+Step 9: runtime_manifest.py
+Step 10: init_platform.py
+
+Reason:
+- minimizes import cycles
+- keeps foundations deterministic
+- allows early smoke tests after each step
+
+====================================================================
+8. CONFIGURATION MODEL
+====================================================================
+Recommended config layering:
+1. hardcoded safe defaults in settings models
+2. .env file values
+3. OS environment variable overrides
+4. CLI override layer later if needed
+
+Rules:
+- no YAML for bootstrap runtime settings in first implementation batch
+- use .env because simple and production-friendly
+- registry YAML remains separate from runtime settings
+
+Example production env keys:
+APP_NAME=gold_research_platform
+APP_ENV=production
+APP_INSTANCE_ID=node01
+PROJECT_ROOT=C:\Data\Bot\Local_LLM\gold_research
+RUNTIME_DIR=C:\Data\Bot\Local_LLM\gold_research\runtime
+STORAGE_DIR=C:\Data\Bot\Local_LLM\gold_research\storage
+REGISTRY_DIR=C:\Data\Bot\Local_LLM\gold_research\registry
+CONFIG_DIR=C:\Data\Bot\Local_LLM\gold_research\config
+STATE_DIR=C:\Data\Bot\Local_LLM\gold_research\state
+LOG_LEVEL=INFO
+LOG_JSON=true
+SERVICE_MODE=disabled
+FAIL_FAST_ON_STARTUP_CHECKS=true
+STARTUP_EMIT_MANIFEST=true
+STARTUP_CREATE_DIRS=true
+STARTUP_VALIDATE_WRITABILITY=true
+
+====================================================================
+9. STARTUP FAILURE POLICY
+====================================================================
+Fail startup immediately on:
+- invalid environment value
+- missing required root directory config
+- unwritable runtime/storage/registry paths
+- invalid manifest path
+- invalid service port
+- invalid API key config consistency
+- schema/version constants missing
+
+Warn only on:
+- missing git hash
+- non-critical optional directory absent
+- local debug mode with text logs
+
+No silent auto-recovery for misconfigured roots.
+
+====================================================================
+10. OUTPUT CONTRACTS
+====================================================================
+Bootstrap must produce these stable outputs:
+
+A. BootstrapContext object
+B. StartupCheckReport object
+C. startup manifest JSON file
+D. structured startup logs
+E. deterministic directory tree (if allowed by config)
+
+These outputs become the foundation for all later jobs.
+
+====================================================================
+11. PRODUCTION RULES
+====================================================================
+- UTC only
+- immutable settings after load
+- log every startup outcome
+- one correlation_id per process startup
+- no secrets in logs or manifests
+- no hidden directory creation outside declared roots
+- Windows-compatible path resolution mandatory
+- bootstrap code must be fast and side-effect-light
+
+====================================================================
+12. TEST STRATEGY
+====================================================================
+Minimum tests for bootstrap batch:
+
+A. version tests
+- version constants exist
+- version format valid
+
+B. settings tests
+- defaults load
+- env overrides apply
+- invalid env fails
+- immutable settings enforced
+
+C. logging tests
+- logging init idempotent
+- no duplicate handlers
+- JSON output option works
+
+D. paths tests
+- required directories built correctly
+- invalid roots fail
+- writable validation works
+
+E. startup check tests
+- pass scenario
+- one fail scenario per critical check
+- warning scenario
+
+F. manifest tests
+- manifest emitted
+- checksum created
+- secrets excluded
+
+G. init_platform tests
+- returns BootstrapContext
+- fail-fast works
+- no registry/business logic touched
+
+====================================================================
+13. BUILD ORDER FOR REAL IMPLEMENTATION
+====================================================================
+Recommended actual coding order:
+
+Phase A16.1
+- version.py
+- constants.py
+- exceptions.py
+
+Phase A16.2
+- env.py
+- paths.py
+
+Phase A16.3
+- settings.py
+- logging_config.py
+
+Phase A16.4
+- health/startup_checks.py
+- runtime_manifest.py
+
+Phase A16.5
+- init_platform.py
+- bootstrap smoke test script
+
+Only after all A16 phases pass:
+- begin registry implementation modules
+- then ingest foundation modules
+
+====================================================================
+14. BOOTSTRAP SMOKE TEST
+====================================================================
+Create one simple smoke test entrypoint later:
+- scripts/smoke_bootstrap.py
+
+Expected behavior:
+1. load config
+2. initialize platform
+3. print startup summary
+4. exit 0 on success
+5. exit non-zero on fail
+
+Expected summary output fields:
+- version
+- environment
+- instance_id
+- runtime_dir
+- storage_dir
+- registry_dir
+- manifest_path
+- startup_checks_passed_count
+- startup_checks_failed_count
+
+====================================================================
+15. PROGRESSION CHECKLIST
+====================================================================
+[ ] A16.1 version/constants/exceptions spec accepted
+[ ] A16.2 env/paths spec accepted
+[ ] A16.3 settings/logging spec accepted
+[ ] A16.4 startup checks/manifest spec accepted
+[ ] A16.5 init_platform spec accepted
+[ ] bootstrap smoke test spec accepted
+[ ] bootstrap coding may begin
+
+====================================================================
+16. STEP UPDATE TEMPLATE
+====================================================================
+STEP_UPDATE
+phase: A16
+step_id:
+step_name:
+version:
+status:
+date_utc:
+objective:
+modules_covered:
+decisions_locked:
+tests_defined:
+risks:
+next_step:
+
+====================================================================
+17. STRATEGY / LOGIC USE RECORD TEMPLATE
+====================================================================
+BOOTSTRAP_LOGIC_RECORD
+record_id:
+version:
+module_name:
+goal:
+inputs:
+outputs:
+validation_rules:
+failure_policy:
+observability:
+notes:
+
+====================================================================
+18. FINAL LOCK FOR A16
+====================================================================
+From this point onward, every later subsystem must depend on bootstrap modules instead of inventing its own config, logging, path, and startup behavior.
+
+This batch is considered the mandatory foundation before registry loader implementation code begins.

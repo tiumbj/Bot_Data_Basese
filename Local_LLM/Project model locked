@@ -1,0 +1,35 @@
+C:\Data\Bot\Local_LLM\gold_research\
+│
+├─ config\
+│  ├─ locked_model_config.json
+│  ├─ timeframe_config.json
+│  ├─ metric_config.json
+│  └─ broker_symbol_map.json
+│
+├─ dataset\
+│  ├─ raw\
+│  ├─ tf\
+│  └─ manifest\
+│
+├─ strategies\
+│  ├─ price_action\
+│  ├─ indicator\
+│  └─ hybrid\
+│
+├─ backtest\
+│  ├─ engine\
+│  ├─ runners\
+│  └─ reports\
+│
+├─ research\
+│  ├─ ema\
+│  ├─ atr_adx\
+│  └─ regime\
+│
+├─ results\
+│  ├─ in_sample\
+│  ├─ out_of_sample\
+│  └─ walk_forward\
+│
+└─ docs\
+   └─ locked_project_rules.md

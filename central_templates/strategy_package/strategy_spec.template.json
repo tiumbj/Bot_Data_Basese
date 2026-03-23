@@ -1,0 +1,17 @@
+{
+  "strategy_id": "",
+  "version": "",
+  "concept": "",
+  "entry_rules": [],
+  "exit_rules": [],
+  "filters": [],
+  "timeframes": [
+    "M1",
+    "M5",
+    "M10",
+    "M15",
+    "H1",
+    "H4"
+  ],
+  "status": "candidate"
+}

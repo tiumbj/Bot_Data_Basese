@@ -1,0 +1,836 @@
+
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform - Phase A7 Implementation Code Spec
+# ที่อยู่ไฟล์แนะนำ: C:\Data\Bot\Local_LLM\gold_research\docs\intelligent_database_platform_phase_a7_implementation_code_spec.txt
+# เวอร์ชัน: v1.8.0
+# ============================================================
+
+[OBJECTIVE]
+แปลง Phase A6 ให้เป็น implementation specification ระดับโมดูล Python จริง
+สำหรับ Intelligent Database Platform แบบ standalone, free-only, fast, robust,
+และยืดหยุ่นพอสำหรับรองรับ bot หลายประเภทในอนาคต
+
+============================================================
+1) LOCKED IMPLEMENTATION DECISIONS
+============================================================
+
+1. Primary contract gate
+   - Pandera (Polars support)
+   - ใช้สำหรับ schema validation, type checks, column checks, dataframe checks
+   - ใช้เป็น PASS / WARN / FAIL / QUARANTINE decision gate ก่อนเข้า canonical layer
+
+2. Critical-path processing engine
+   - Polars LazyFrame-first
+   - ใช้ lazy scan / transform / filter / dedup / aggregate / resample
+   - งานที่ data-heavy ต้องพยายามอยู่ใน lazy pipeline ให้มากที่สุด
+
+3. Canonical storage
+   - Parquet partitioned dataset
+   - ใช้ zstd compression เป็น default
+   - เขียนแบบ deterministic path layout
+
+4. Analytical / audit registry
+   - DuckDB
+   - ใช้เก็บ run registry, anomaly summary, quarantine index, strategy package registry,
+     validation summary, publish status, service metadata
+
+5. Similar-case memory / retrieval
+   - Qdrant
+   - ไม่อยู่ใน ingest hot path
+   - อัปเดตหลัง labels/cases ถูก publish แล้ว
+
+6. Backtest execution
+   - Custom Numba-based simulation engine
+   - ใช้ Ray สำหรับ batch fan-out เมื่อจำนวน scenario มาก
+
+7. Service access model
+   - Python SDK = primary local access
+   - HTTP API = secondary multi-bot access
+   - ทั้งสองทางต้องอิง registry/manifest เดียวกัน
+
+============================================================
+2) TARGET FOLDER STRUCTURE
+============================================================
+
+gold_research/
+  platform/
+    contracts/
+      pandera_ohlcv_schema.py
+      pandera_feature_schema.py
+      pandera_label_schema.py
+      contract_thresholds.py
+    ingest/
+      mt5_pull_m1.py
+      raw_batch_manifest.py
+      normalize_ohlcv.py
+      continuity_checks.py
+      dedup_engine.py
+      quarantine_writer.py
+      canonical_writer.py
+      resample_timeframes.py
+    registry/
+      duckdb_registry.py
+      registry_schema.sql
+      run_registry_ops.py
+      package_registry_ops.py
+      publish_registry_ops.py
+    features/
+      feature_builder_base.py
+      feature_builder_regime.py
+      feature_builder_structure.py
+      feature_store_writer.py
+    backtest/
+      scenario_registry.py
+      execution_kernel_numba.py
+      backtest_runner.py
+      walkforward_runner.py
+      validation_runner.py
+      result_aggregator.py
+    labels/
+      label_builder.py
+      label_quality_checks.py
+      case_memory_builder.py
+      qdrant_updater.py
+    services/
+      sdk/
+        client.py
+        models.py
+      api/
+        app.py
+        routes_market.py
+        routes_packages.py
+        routes_cases.py
+        routes_health.py
+        auth.py
+    publishing/
+      intelligence_snapshot_writer.py
+      package_publisher.py
+      export_runtime_views.py
+    jobs/
+      weekly_ingest_pipeline.py
+      weekly_research_pipeline.py
+      weekly_publish_pipeline.py
+      nightly_live_feedback_sync.py
+    common/
+      paths.py
+      enums.py
+      clocks.py
+      hashing.py
+      ids.py
+      logging_utils.py
+      config_loader.py
+      io_utils.py
+      exceptions.py
+    docs/
+      ...
+    data/
+      raw/
+      quarantine/
+      canonical/
+      features/
+      labels/
+      cases/
+      publish/
+      manifests/
+      logs/
+      db/
+        intelligence_registry.duckdb
+
+============================================================
+3) MODULE-BY-MODULE RESPONSIBILITY
+============================================================
+
+3.1 contracts/pandera_ohlcv_schema.py
+Purpose:
+- นิยาม canonical OHLCV schema สำหรับ M1
+- กำหนด field type, nullable rule, column checks, dataframe checks
+
+Responsibilities:
+- validate timezone-normalized timestamp
+- validate numeric coercion
+- validate low <= min(open, close, high)
+- validate high >= max(open, close, low)
+- validate volume >= 0
+- validate no nulls in critical fields
+- validate uniqueness of logical key ใน batch หลัง normalize
+
+Outputs:
+- validation result object
+- failed rows dataframe
+- severity classification
+
+3.2 contracts/contract_thresholds.py
+Purpose:
+- เก็บ threshold policy ทั้งหมดแบบ central
+- ใช้โดย normalize, anomaly scoring, validation, quarantine, publish quality gate
+
+Responsibilities:
+- spread-like bar range threshold
+- zero-volume threshold policy
+- gap threshold policy
+- duplicate conflict tolerance
+- rolling MAD / IQR multiplier
+- warn/fail/quarantine cutoffs
+
+Format:
+- Python dict or dataclass constants
+- ต้องมี version field
+- เปลี่ยน threshold ต้อง bump contract version
+
+3.3 ingest/mt5_pull_m1.py
+Purpose:
+- ดึง M1 จาก MT5 แบบ raw ingest source เดียว
+
+Responsibilities:
+- fetch by symbol/time window
+- normalize column names from MT5
+- stamp source metadata
+- create raw batch id
+- write raw parquet batch
+- emit raw manifest
+
+Rules:
+- ห้าม resample ในโมดูลนี้
+- ห้าม dedup ในโมดูลนี้
+- ห้าม overwrite raw batch เดิม
+
+3.4 ingest/raw_batch_manifest.py
+Purpose:
+- สร้าง metadata ของ raw batch ทุกก้อน
+
+Manifest fields:
+- run_id
+- batch_id
+- source_name
+- source_symbol
+- timeframe
+- start_ts_utc
+- end_ts_utc
+- pulled_at_utc
+- row_count
+- file_path
+- sha256_file
+- schema_version
+- source_session_id
+
+3.5 ingest/normalize_ohlcv.py
+Purpose:
+- แปลง raw batch ให้เป็น canonical M1 frame
+
+Responsibilities:
+- rename columns -> canonical names
+- cast numeric types
+- cast timestamp to UTC
+- sort by timestamp asc
+- add symbol/timeframe/source/run_id
+- derive logical_key
+- derive row_hash
+- attach batch_id
+- strip impossible rows before contract validation only if clearly corrupt parse issue
+- preserve rejected rows separately
+
+3.6 ingest/continuity_checks.py
+Purpose:
+- ตรวจความต่อเนื่องของเวลาและจำแนก gap type
+
+Responsibilities:
+- missing minute detection
+- duplicate timestamp detection
+- reversed ordering detection
+- abnormal gap clustering
+- classify gap:
+  - market_closed_expected
+  - source_gap_suspect
+  - partial_batch_overlap
+  - timestamp_conflict
+  - unknown_gap
+
+Output:
+- continuity summary
+- row-level continuity flags
+- quarantine recommendations
+
+3.7 ingest/dedup_engine.py
+Purpose:
+- จัดการ row-level dedup และ conflict resolution แบบ deterministic
+
+Decision order:
+1. exact row_hash duplicate -> keep first canonical, drop duplicate
+2. same logical_key + same OHLCV -> drop duplicate
+3. same logical_key + different OHLCV -> mark conflict
+4. choose winner only if trusted_source_priority rule exists
+5. else send all conflicting candidates to quarantine and do not upsert
+
+Rules:
+- dedup engine ห้ามใช้อัลกอริทึม probabilistic
+- ผลต้อง reproducible 100%
+- ทุก decision ต้องถูก log เข้า DuckDB registry
+
+3.8 ingest/quarantine_writer.py
+Purpose:
+- เก็บ rows/batches ที่ FAIL หรือ CONFLICT หรือ suspicious
+- แยกตาม reason code และ run_id
+
+Quarantine reasons:
+- schema_fail
+- timestamp_conflict
+- duplicate_conflict
+- continuity_gap_suspect
+- ohlcv_impossible
+- extreme_outlier
+- parse_error
+- source_inconsistency
+
+Output layout:
+- data/quarantine/reason_code=.../date=YYYY-MM-DD/*.parquet
+
+3.9 ingest/canonical_writer.py
+Purpose:
+- เขียน canonical M1 dataset แบบ append-safe + idempotent publish rules
+
+Rules:
+- write only PASS or WARN rows that are not in conflict
+- partition by symbol/year/month
+- maintain manifest entry in registry
+- publish only after write verification succeeds
+- keep immutable published partitions
+- corrections use replacement manifest, not silent overwrite
+
+3.10 ingest/resample_timeframes.py
+Purpose:
+- สร้าง TF อื่นจาก canonical M1 แบบ deterministic
+
+Mandatory TF:
+- M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1
+
+Rules:
+- open = first
+- high = max
+- low = min
+- close = last
+- tick_volume = sum
+- source anchor = canonical M1 only
+- resample output must carry parent_manifest_id and build_run_id
+
+3.11 registry/duckdb_registry.py
+Purpose:
+- single entry point สำหรับ DuckDB connection และ helper queries
+
+Responsibilities:
+- create/open db
+- apply schema migrations
+- provide transaction helpers
+- enforce WAL/checkpoint policy if needed
+- expose typed helper methods for inserts/queries
+
+3.12 registry/registry_schema.sql
+Core tables:
+- run_registry
+- raw_batch_registry
+- canonical_manifest_registry
+- quarantine_registry
+- continuity_registry
+- validation_registry
+- timeframe_build_registry
+- feature_build_registry
+- backtest_run_registry
+- package_registry
+- publish_registry
+- live_feedback_registry
+- service_access_audit
+
+3.13 features/feature_builder_base.py
+Purpose:
+- สร้าง feature columns กลางจาก canonical/resampled bars
+
+Feature families:
+- volatility (ATR variants, normalized range)
+- regime (trend, compression, expansion)
+- price location (EMA stack distance, VWAP deviation if available)
+- structure (swing, BOS, CHOCH, pullback depth)
+- session/time context
+- liquidity sweep proxies
+- momentum decay / continuation proxies
+
+Rules:
+- ทุก feature ต้องมี metadata:
+  feature_name, version, input_tf, formula_id, null_policy
+
+3.14 features/feature_store_writer.py
+Purpose:
+- เขียน feature store ลง parquet + registry
+- รองรับ rebuild เฉพาะ symbol/timeframe/date range ที่ได้รับผลกระทบ
+
+3.15 backtest/scenario_registry.py
+Purpose:
+- นิยาม strategy family, parameter set, timeframe, entry logic, exit logic, micro exit package
+
+Rules:
+- strategy_id ต้อง deterministic
+- parameter fingerprint ต้อง stable
+- strategy family ต้อง map กลับไป docs/progression ได้
+
+3.16 backtest/execution_kernel_numba.py
+Purpose:
+- simulation kernel ระดับเร็วสำหรับ backtest/walk-forward
+
+Expected capabilities:
+- market entry / pending style abstraction if needed
+- SL/TP hit logic
+- partial exit hooks
+- micro exit hooks
+- timeout exit
+- commission/slippage/spread model hooks
+- per-trade event log
+
+3.17 backtest/backtest_runner.py
+Purpose:
+- fan-out scenario runs by TF / regime / strategy family / parameter grid
+
+Rules:
+- mandatory single-timeframe coverage:
+  M1, M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1
+- micro exit base layer mandatory on all TF
+- output must include run manifest and metrics manifest
+
+3.18 backtest/walkforward_runner.py
+Purpose:
+- รัน train/validate/test window schedule แบบ rolling
+- ใช้เพื่อกัน overfitting และวัด transition damage
+
+3.19 backtest/validation_runner.py
+Purpose:
+- ตรวจ strategy robustness หลัง backtest
+
+Validation dimensions:
+- by timeframe
+- by market regime
+- by session
+- by month/quarter
+- by spread/slippage stress
+- by parameter perturbation
+- by micro exit on/off delta
+- by outlier dependency
+
+3.20 backtest/result_aggregator.py
+Purpose:
+- รวมผล backtest เป็น package decision table
+
+Outputs:
+- approved package candidates
+- rejected package candidates
+- unstable package list
+- strategy comparison leaderboard
+- failure pattern summary
+
+3.21 labels/label_builder.py
+Purpose:
+- สร้าง labels จาก backtest/live outcome เพื่อใช้เป็น memory for future bots/LLM
+
+Label families:
+- entry_quality_label
+- exit_quality_label
+- regime_alignment_label
+- risk_efficiency_label
+- slippage_damage_label
+- false_break_label
+- continuation_success_label
+- micro_exit_salvage_label
+
+3.22 labels/case_memory_builder.py
+Purpose:
+- สร้าง “case documents” จาก labeled results สำหรับ similarity retrieval
+
+Case fields:
+- case_id
+- symbol
+- timeframe
+- strategy_id
+- regime tags
+- feature vector
+- entry context summary
+- exit summary
+- outcome metrics
+- label summary
+- source manifests
+
+3.23 labels/qdrant_updater.py
+Purpose:
+- embed and upsert cases into Qdrant
+- maintain collection versioning
+- support rebuild by date range or package id
+
+3.24 services/sdk/client.py
+Purpose:
+- ให้ bot ฝั่ง local เรียกใช้ข้อมูลได้ง่าย
+
+Required methods:
+- get_latest_market_snapshot(symbol)
+- get_best_packages(symbol, timeframe)
+- get_micro_exit_package(symbol, timeframe)
+- get_similar_cases(symbol, timeframe, feature_payload, top_k)
+- get_regime_summary(symbol)
+- write_live_feedback(payload)
+- get_publish_version()
+
+3.25 services/api/app.py
+Purpose:
+- HTTP service สำหรับ bot หลายประเภทในอนาคต
+
+Minimum routes:
+- GET /health
+- GET /publish/version
+- GET /market/snapshot
+- GET /packages/best
+- GET /packages/micro-exit
+- POST /cases/similar
+- POST /feedback/live-trade
+
+Rules:
+- read-mostly service
+- feedback write route ต้อง idempotent
+- token-based auth อย่างน้อยสำหรับ non-local access
+
+3.26 publishing/intelligence_snapshot_writer.py
+Purpose:
+- เขียน weekly intelligence output สำหรับ bot และมนุษย์
+
+Artifacts:
+- weekly intelligence summary
+- approved packages by TF
+- rejected package reasons
+- regime drift notes
+- data quality summary
+- live vs research divergence summary
+
+3.27 publishing/package_publisher.py
+Purpose:
+- publish “current approved package set” จาก registry ไปยัง publish area
+- มี active_version, previous_version, rollback pointer
+
+3.28 jobs/weekly_ingest_pipeline.py
+Purpose:
+- orchestration ของ ingest + validation + dedup + canonical publish + resample
+
+Execution order:
+1. pull MT5 raw M1
+2. write raw manifest
+3. normalize
+4. contract validate
+5. continuity checks
+6. dedup/conflict resolve
+7. quarantine rejects/conflicts
+8. write canonical M1
+9. rebuild impacted TF
+10. update registry tables
+
+3.29 jobs/weekly_research_pipeline.py
+Purpose:
+- orchestration ของ feature rebuild + backtest + validation + labels + cases + Qdrant
+
+Execution order:
+1. find changed canonical manifests
+2. rebuild affected features
+3. select strategy scenarios
+4. run backtest
+5. run walk-forward/validation
+6. aggregate results
+7. build labels
+8. build case memory
+9. update Qdrant
+10. update package registry
+
+3.30 jobs/weekly_publish_pipeline.py
+Purpose:
+- publish package + intelligence output + service views
+
+Execution order:
+1. verify quality gates
+2. publish package set
+3. write intelligence snapshot
+4. export runtime views
+5. mark publish complete in registry
+
+3.31 jobs/nightly_live_feedback_sync.py
+Purpose:
+- sync ผล live trade จาก bot runtime กลับ platform กลาง
+- append-only ก่อน, aggregate ทีหลัง
+
+============================================================
+4) CORE DATA MODELS
+============================================================
+
+4.1 Canonical M1 row
+- ts_utc
+- symbol
+- timeframe
+- open
+- high
+- low
+- close
+- tick_volume
+- source_name
+- source_batch_id
+- logical_key
+- row_hash
+- ingest_run_id
+- contract_version
+- quality_status
+- continuity_flag
+- anomaly_score
+- created_at_utc
+
+4.2 Backtest result row
+- backtest_run_id
+- strategy_id
+- package_candidate_id
+- symbol
+- timeframe
+- train_window
+- test_window
+- trade_count
+- win_rate
+- profit_factor
+- expectancy_r
+- max_drawdown_r
+- return_over_dd
+- stability_score
+- micro_exit_enabled
+- validation_status
+- metric_manifest_version
+
+4.3 Live feedback row
+- live_feedback_id
+- bot_id
+- account_id
+- order_ticket
+- symbol
+- timeframe
+- package_id_used
+- strategy_id
+- side
+- entry_ts_utc
+- exit_ts_utc
+- entry_price
+- exit_price
+- sl
+- tp
+- rr_planned
+- rr_realized
+- slippage
+- spread
+- regime_tag
+- llm_decision
+- llm_confidence
+- entry_reason
+- exit_reason
+- micro_exit_reason
+- outcome_label
+- synced_at_utc
+
+============================================================
+5) QUALITY GATES
+============================================================
+
+Gate 1: Raw batch acceptance
+- file readable
+- manifest complete
+- symbol/timeframe/source not null
+
+Gate 2: Contract validation
+- Pandera schema passes or warns within allowed threshold
+
+Gate 3: Continuity and dedup
+- no unresolved timestamp conflict enters canonical
+
+Gate 4: Canonical publish verification
+- row count + min/max ts + checksum summary logged
+
+Gate 5: Feature build verification
+- required features present for target timeframe
+
+Gate 6: Research quality gate
+- minimum trade count
+- no broken validation windows
+- no metric manifest mismatch
+
+Gate 7: Publish quality gate
+- approved package set exists
+- intelligence snapshot generated
+- publish registry committed
+
+============================================================
+6) FLEXIBLE ACCESS DESIGN FOR MANY FUTURE BOTS
+============================================================
+
+Principle:
+- หนึ่ง platform กลาง
+- หลาย bot เรียกใช้ได้
+- ไม่บังคับให้ทุก bot ใช้ stack เดียวกัน
+
+Access pattern:
+A. Local Python bot
+   -> ใช้ SDK โดยตรง
+   -> latency ต่ำสุด
+   -> เหมาะกับ MT5 execution bot
+
+B. Local network bot / service bot
+   -> ใช้ HTTP API
+   -> รองรับ bot คนละ process/ภาษา
+   -> เหมาะกับ dashboard bot / alert bot / LLM service bot
+
+C. Batch consumer
+   -> อ่าน publish parquet/json summaries
+   -> เหมาะกับ research notebook / reporting layer
+
+Rules:
+- active published views only for bot consumption
+- bot ห้ามอ่าน staging/quarantine/raw โดยตรง
+- ทุก service response ต้องแนบ publish_version และ data_timestamp
+
+============================================================
+7) SECURITY / ROBUSTNESS RULES
+============================================================
+
+1. Raw data immutable
+2. Canonical publish append-safe
+3. Conflict rows never silently overwrite
+4. Registry update inside transaction
+5. Every run has run_id + manifest
+6. Every publish has active_version + rollback pointer
+7. Service routes are read-mostly
+8. Live feedback writes are idempotent
+9. Bot-facing data only comes from published views
+10. Full lineage must trace:
+    raw batch -> canonical manifest -> feature build -> backtest run -> package publish -> live feedback
+
+============================================================
+8) RECOMMENDED BUILD ORDER
+============================================================
+
+Phase A7.1
+- common/
+- registry/
+- contracts/
+
+Phase A7.2
+- ingest/raw_batch_manifest.py
+- ingest/mt5_pull_m1.py
+- ingest/normalize_ohlcv.py
+- ingest/continuity_checks.py
+- ingest/dedup_engine.py
+- ingest/quarantine_writer.py
+- ingest/canonical_writer.py
+- ingest/resample_timeframes.py
+
+Phase A7.3
+- jobs/weekly_ingest_pipeline.py
+- verify canonical M1 + TF rebuild
+
+Phase A7.4
+- features/
+- backtest/scenario_registry.py
+- backtest/execution_kernel_numba.py
+- backtest/backtest_runner.py
+
+Phase A7.5
+- walkforward_runner.py
+- validation_runner.py
+- result_aggregator.py
+- labels/
+
+Phase A7.6
+- publishing/
+- services/sdk/
+- services/api/
+
+Phase A7.7
+- nightly_live_feedback_sync.py
+- live-vs-research divergence loop
+
+============================================================
+9) PROGRESSION CHECKLIST
+============================================================
+
+[ ] A7.1 common modules spec locked
+[ ] A7.1 DuckDB registry schema created
+[ ] A7.1 Pandera contracts created
+[ ] A7.2 MT5 M1 raw pull module created
+[ ] A7.2 raw manifest module created
+[ ] A7.2 normalize module created
+[ ] A7.2 continuity checker created
+[ ] A7.2 dedup engine created
+[ ] A7.2 quarantine writer created
+[ ] A7.2 canonical writer created
+[ ] A7.2 resample builder created
+[ ] A7.3 weekly ingest pipeline created
+[ ] Canonical M1 build verified
+[ ] All mandatory TF build verified
+[ ] Feature build base verified
+[ ] Backtest execution kernel verified
+[ ] Walk-forward validation verified
+[ ] Labels/cases/Qdrant update verified
+[ ] Publish package flow verified
+[ ] SDK verified
+[ ] API verified
+[ ] Live feedback sync verified
+
+============================================================
+10) STEP UPDATE TEMPLATE
+============================================================
+
+[STEP UPDATE]
+step_id:
+date_utc:
+owner:
+module_group:
+module_name:
+version:
+status: PLANNED / IN_PROGRESS / DONE / BLOCKED
+input_dependencies:
+output_artifacts:
+run_id:
+result_summary:
+quality_gate_result:
+issues_found:
+decision_taken:
+next_step:
+
+============================================================
+11) STRATEGY / LOGIC RECORD TEMPLATE
+============================================================
+
+[STRATEGY LOGIC RECORD]
+record_id:
+date_utc:
+strategy_family:
+strategy_id:
+entry_logic_summary:
+exit_logic_summary:
+micro_exit_logic:
+timeframe:
+regime_target:
+parameters:
+feature_dependencies:
+backtest_run_id:
+validation_status:
+result_summary:
+package_decision:
+notes:
+
+============================================================
+12) FINAL LOCK
+============================================================
+
+จากนี้ให้ถือว่า:
+
+1. Intelligent Database Platform เป็นระบบหลักแบบ standalone
+2. Bot ทุกตัวเป็น consumer ของ publish/service layer
+3. Contract gate ใช้ Pandera
+4. Hot path ใช้ Polars
+5. Audit/registry ใช้ DuckDB
+6. Storage กลางใช้ Parquet
+7. Similar-case memory ใช้ Qdrant
+8. ไม่มี bot ใดสร้าง memory/labels/package registry แยกเอง
+9. ทุกอย่างต้อง trace กลับได้ถึง raw batch และ run_id
+10. การขยายในอนาคตให้เพิ่ม bot ใหม่ผ่าน SDK/API ก่อน ไม่แตก fork logic กลาง

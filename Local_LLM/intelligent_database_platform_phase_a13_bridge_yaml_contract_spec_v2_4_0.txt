@@ -1,0 +1,804 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform - Phase A13 Bridge YAML Contract Spec
+# เวอร์ชัน: v2.4.0
+# ประเภท: Technical Specification / YAML Contract / Migration Bridge
+# สถานะ: LOCKED FOR IMPLEMENTATION DESIGN
+# วันที่: 2026-03-20
+# ============================================================
+
+[OBJECTIVE]
+กำหนด YAML contract มาตรฐานสำหรับ bridge layer เพื่อรับผล test/backtest/research ที่มีอยู่เดิม
+เข้า Intelligent Database Platform โดยไม่รื้อ pipeline เดิม และทำให้ parser / normalizer / promoter
+ทำงานแบบ deterministic, configurable, versioned, และ production-safe
+
+เอกสารนี้ล็อก 5 ส่วนหลัก:
+1) bridge_file_patterns.yaml
+2) metric_alias_registry.yaml
+3) strategy_alias_registry.yaml
+4) timeframe_registry.yaml
+5) artifact_type_registry.yaml
+
+ทุก YAML ต้องเป็น additive-first, version-controlled, human-readable, machine-validated,
+และเป็น source-of-truth สำหรับ legacy output ingestion
+
+====================================================================
+A13.1 PRINCIPLES
+====================================================================
+
+1. YAML เป็น configuration contract ไม่ใช่ business logic
+   - parser code อ่านกติกาจาก YAML
+   - ห้าม hardcode alias/pattern หลักไว้ใน parser ยกเว้น fallback ขั้นต่ำ
+
+2. ทุก registry ต้องมี version
+   - registry_version
+   - updated_at_utc
+   - owner
+   - change_note
+
+3. ทุก mapping ต้อง reversible พอสมควร
+   - รู้ได้ว่า alias เก่าถูก normalize เป็นค่าใด
+   - ต้องเก็บ raw value เดิมไว้ใน normalized record เสมอ
+
+4. ทุก pattern ต้อง deterministic
+   - ถ้า match ได้หลาย rule ต้องมี priority
+   - ถ้า ambiguity ยังเหลือ ให้ quarantine
+
+5. ทุก registry ต้องรองรับอนาคตหลาย bot / หลาย artifact family
+   - add new pattern / alias ได้โดยไม่เปลี่ยน parser core
+
+6. production-safe
+   - YAML ผิด schema = pipeline ไม่เริ่ม
+   - YAML โหลดไม่ครบ = fail fast
+   - YAML เปลี่ยนต้องบันทึก checksum ลง registry
+
+====================================================================
+A13.2 DIRECTORY STANDARD
+====================================================================
+
+project_root/
+  config/
+    bridge/
+      bridge_file_patterns.yaml
+      metric_alias_registry.yaml
+      strategy_alias_registry.yaml
+      timeframe_registry.yaml
+      artifact_type_registry.yaml
+      bridge_registry_manifest.yaml
+      examples/
+        sample_bridge_file_patterns.yaml
+        sample_metric_alias_registry.yaml
+        sample_strategy_alias_registry.yaml
+        sample_timeframe_registry.yaml
+        sample_artifact_type_registry.yaml
+
+====================================================================
+A13.3 bridge_registry_manifest.yaml
+====================================================================
+
+Purpose:
+- รวม metadata ของทุก registry file
+- ระบุ dependency order
+- ระบุ checksum
+- ระบุ compatibility version
+
+Required fields:
+- manifest_version
+- platform_min_version
+- created_at_utc
+- updated_at_utc
+- registries
+  - registry_name
+  - file_name
+  - registry_version
+  - sha256
+  - required
+  - load_order
+  - owner
+  - status
+
+Example:
+
+manifest_version: "1.0"
+platform_min_version: "2.4.0"
+created_at_utc: "2026-03-20T00:00:00Z"
+updated_at_utc: "2026-03-20T00:00:00Z"
+registries:
+  - registry_name: bridge_file_patterns
+    file_name: bridge_file_patterns.yaml
+    registry_version: "1.0"
+    sha256: "REPLACE_WITH_REAL_SHA256"
+    required: true
+    load_order: 10
+    owner: "platform"
+    status: "active"
+  - registry_name: strategy_alias_registry
+    file_name: strategy_alias_registry.yaml
+    registry_version: "1.0"
+    sha256: "REPLACE_WITH_REAL_SHA256"
+    required: true
+    load_order: 20
+    owner: "research"
+    status: "active"
+  - registry_name: metric_alias_registry
+    file_name: metric_alias_registry.yaml
+    registry_version: "1.0"
+    sha256: "REPLACE_WITH_REAL_SHA256"
+    required: true
+    load_order: 30
+    owner: "research"
+    status: "active"
+  - registry_name: timeframe_registry
+    file_name: timeframe_registry.yaml
+    registry_version: "1.0"
+    sha256: "REPLACE_WITH_REAL_SHA256"
+    required: true
+    load_order: 40
+    owner: "platform"
+    status: "active"
+  - registry_name: artifact_type_registry
+    file_name: artifact_type_registry.yaml
+    registry_version: "1.0"
+    sha256: "REPLACE_WITH_REAL_SHA256"
+    required: true
+    load_order: 50
+    owner: "platform"
+    status: "active"
+
+====================================================================
+A13.4 bridge_file_patterns.yaml
+====================================================================
+
+Purpose:
+- ระบุรูปแบบไฟล์ legacy/current outputs ที่ bridge layer ต้องรู้จัก
+- map path/filename/payload ไปสู่ artifact_type, parse rule, strategy/timeframe extraction rule
+
+Required top-level fields:
+- registry_version
+- updated_at_utc
+- owner
+- change_note
+- default_timezone
+- matching_policy
+- patterns
+
+Required pattern fields:
+- pattern_id
+- enabled
+- priority
+- artifact_type
+- source_family
+- file_glob
+- filename_regex
+- path_regex
+- parser_name
+- extractors
+- required_fields
+- optional_fields
+- normalization_profile
+- quarantine_on_missing
+- examples
+- notes
+
+Example:
+
+registry_version: "1.0"
+updated_at_utc: "2026-03-20T00:00:00Z"
+owner: "platform"
+change_note: "Initial bridge file registry"
+default_timezone: "UTC"
+matching_policy:
+  first_match_by_priority: true
+  quarantine_if_multiple_same_priority: true
+  quarantine_if_no_match: true
+patterns:
+  - pattern_id: "component_package_json_v1"
+    enabled: true
+    priority: 100
+    artifact_type: "component_package_result"
+    source_family: "gold_research_jobs"
+    file_glob: "**/*component*package*.json"
+    filename_regex: "(?i)(?P<strategy_slug>[a-z0-9_]+)_(?P<tf>M1|M2|M3|M4|M5|M6|M10|M15|M30|H1|H4|D1).*\\.json$"
+    path_regex: ".*/jobs/.*"
+    parser_name: "json_metrics_parser_v1"
+    extractors:
+      strategy_slug:
+        source: "filename_regex_group"
+        key: "strategy_slug"
+      timeframe:
+        source: "filename_regex_group"
+        key: "tf"
+      package_name:
+        source: "payload_key"
+        key: "package_name"
+      test_window_start_utc:
+        source: "payload_key"
+        key: "test_window_start_utc"
+      test_window_end_utc:
+        source: "payload_key"
+        key: "test_window_end_utc"
+    required_fields:
+      - package_name
+      - timeframe
+    optional_fields:
+      - strategy_slug
+      - test_window_start_utc
+      - test_window_end_utc
+    normalization_profile: "research_metrics_standard_v1"
+    quarantine_on_missing:
+      - package_name
+      - timeframe
+    examples:
+      - "entry_v2_pullback_deep_M30_component_package.json"
+    notes: "Default package output from legacy build jobs"
+
+  - pattern_id: "validation_csv_v1"
+    enabled: true
+    priority: 200
+    artifact_type: "validation_summary_csv"
+    source_family: "gold_research_validation"
+    file_glob: "**/*validation*.csv"
+    filename_regex: "(?i)(?P<strategy_slug>[a-z0-9_]+)_(?P<tf>M1|M2|M3|M4|M5|M6|M10|M15|M30|H1|H4|D1).*validation.*\\.csv$"
+    path_regex: ".*/validation/.*|.*/results/.*"
+    parser_name: "csv_metrics_parser_v1"
+    extractors:
+      strategy_slug:
+        source: "filename_regex_group"
+        key: "strategy_slug"
+      timeframe:
+        source: "filename_regex_group"
+        key: "tf"
+    required_fields:
+      - timeframe
+    optional_fields:
+      - strategy_slug
+    normalization_profile: "research_metrics_standard_v1"
+    quarantine_on_missing:
+      - timeframe
+    examples:
+      - "locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep_M30_validation.csv"
+    notes: "Validation result exports"
+
+  - pattern_id: "notes_text_v1"
+    enabled: true
+    priority: 500
+    artifact_type: "research_notes_text"
+    source_family: "manual_notes"
+    file_glob: "**/*.txt"
+    filename_regex: ".*"
+    path_regex: ".*/notes/.*|.*/docs/.*|.*/reports/.*"
+    parser_name: "text_notes_parser_v1"
+    extractors: {}
+    required_fields: []
+    optional_fields:
+      - strategy_slug
+      - timeframe
+    normalization_profile: "notes_profile_v1"
+    quarantine_on_missing: []
+    examples:
+      - "m30_pullback_deep_notes.txt"
+    notes: "Plain-text notes for manual evidence ingestion"
+
+Matching resolution rules:
+1. sort by priority ascending or descending must be fixed; lock to descending priority wins
+2. if >1 pattern matches at same top priority -> quarantine reason=MULTIPLE_PATTERN_MATCH
+3. if no pattern matches -> quarantine reason=NO_PATTERN_MATCH
+4. parser_name must exist in parser registry inside code
+
+====================================================================
+A13.5 metric_alias_registry.yaml
+====================================================================
+
+Purpose:
+- normalize metrics หลายชื่อให้เป็น canonical metric key เดียว
+- ใช้กับ JSON/CSV/TXT extraction
+- ลดปัญหา win_rate / winrate / pct_win / hit_rate กระจัดกระจาย
+
+Required top-level fields:
+- registry_version
+- updated_at_utc
+- owner
+- canonical_metric_set
+
+Required metric item fields:
+- canonical_metric_key
+- data_type
+- unit
+- direction
+- aliases
+- parse_rules
+- null_policy
+- range_policy
+- notes
+
+Canonical metrics minimum set:
+- trades_total
+- win_rate_pct
+- pnl_net
+- return_pct
+- avg_rr
+- max_drawdown_pct
+- expectancy
+- sharpe_like
+- profit_factor
+- avg_trade_duration_bars
+- stop_loss_hits
+- take_profit_hits
+- timeout_exits
+- micro_exit_hits
+- invalidation_exits
+
+Example:
+
+registry_version: "1.0"
+updated_at_utc: "2026-03-20T00:00:00Z"
+owner: "research"
+canonical_metric_set:
+  - canonical_metric_key: "trades_total"
+    data_type: "int"
+    unit: "count"
+    direction: "higher_is_contextual"
+    aliases: ["trades", "trade_count", "n_trades", "total_trades"]
+    parse_rules:
+      strip_percent: false
+      strip_currency: false
+      allow_commas: true
+    null_policy: "quarantine_if_missing_for_backtest_summary"
+    range_policy:
+      min: 0
+      max: 10000000
+    notes: "Total closed trades in result window"
+
+  - canonical_metric_key: "win_rate_pct"
+    data_type: "float"
+    unit: "percent"
+    direction: "higher_is_better"
+    aliases: ["win_rate", "winrate", "hit_rate", "pct_win", "percent_win"]
+    parse_rules:
+      strip_percent: true
+      strip_currency: false
+      allow_commas: false
+    null_policy: "warn_if_missing"
+    range_policy:
+      min: 0.0
+      max: 100.0
+    notes: "Percent winning trades"
+
+  - canonical_metric_key: "profit_factor"
+    data_type: "float"
+    unit: "ratio"
+    direction: "higher_is_better"
+    aliases: ["pf", "profit_factor_ratio", "gross_profit_factor"]
+    parse_rules:
+      strip_percent: false
+      strip_currency: false
+      allow_commas: false
+    null_policy: "warn_if_missing"
+    range_policy:
+      min: 0.0
+      max: 1000.0
+    notes: "Gross profit / gross loss"
+
+Alias resolution rules:
+1. normalize case to lowercase
+2. replace spaces and hyphens with underscore
+3. collapse multiple underscores
+4. exact alias match first
+5. optional fuzzy matching is disabled in production ingestion
+6. unknown metrics go to raw_metrics_json but do not become canonical automatically
+
+====================================================================
+A13.6 strategy_alias_registry.yaml
+====================================================================
+
+Purpose:
+- map strategy aliases / short names / old filenames ไปสู่ canonical strategy_id
+- รองรับ entry logic, exit logic, component package, micro exit family
+
+Required top-level fields:
+- registry_version
+- updated_at_utc
+- owner
+- canonical_strategies
+
+Required strategy fields:
+- canonical_strategy_id
+- strategy_family
+- layer_type
+- aliases
+- tags
+- fingerprint_fields
+- status
+- notes
+
+Example:
+
+registry_version: "1.0"
+updated_at_utc: "2026-03-20T00:00:00Z"
+owner: "research"
+canonical_strategies:
+  - canonical_strategy_id: "entry_v2_pullback_deep"
+    strategy_family: "entry"
+    layer_type: "entry_logic"
+    aliases:
+      - "pullback_deep"
+      - "entry_v2_pullback_deep"
+      - "locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep"
+      - "pb_deep"
+    tags: ["market_structure", "pullback", "trend_filter"]
+    fingerprint_fields:
+      - bos_rule
+      - choch_rule
+      - atr_filter
+      - adx_filter
+      - ema_stack_rule
+      - pullback_depth_rule
+    status: "active_research"
+    notes: "Primary entry family under current research"
+
+  - canonical_strategy_id: "micro_exit_fast_invalidation_v2"
+    strategy_family: "exit"
+    layer_type: "micro_exit"
+    aliases:
+      - "micro_exit_v2_fast_invalidation"
+      - "locked_ms_bos_choch_pullback_atr_adx_ema_micro_exit_v2_fast_invalidation"
+      - "fast_invalidation"
+    tags: ["micro_exit", "risk_control", "fast_fail"]
+    fingerprint_fields:
+      - invalidation_trigger
+      - adverse_move_threshold
+      - bar_count_limit
+    status: "active_research"
+    notes: "Mandatory micro exit layer family"
+
+Strategy resolution rules:
+1. filename alias first
+2. payload strategy_name second
+3. folder-based hint third
+4. if 2 canonical strategies still compete -> quarantine reason=AMBIGUOUS_STRATEGY_ALIAS
+5. unknown strategy allowed only as provisional with status=unmapped_legacy_candidate
+
+====================================================================
+A13.7 timeframe_registry.yaml
+====================================================================
+
+Purpose:
+- normalize timeframe aliases และระบุ mandatory research coverage matrix
+
+Required top-level fields:
+- registry_version
+- updated_at_utc
+- owner
+- timeframes
+- mandatory_research_timeframes
+
+Example:
+
+registry_version: "1.0"
+updated_at_utc: "2026-03-20T00:00:00Z"
+owner: "platform"
+mandatory_research_timeframes:
+  - M1
+  - M2
+  - M3
+  - M4
+  - M5
+  - M6
+  - M10
+  - M15
+  - M30
+  - H1
+  - H4
+  - D1
+timeframes:
+  - canonical_timeframe: "M1"
+    minutes: 1
+    aliases: ["1m", "m1", "M1"]
+  - canonical_timeframe: "M2"
+    minutes: 2
+    aliases: ["2m", "m2", "M2"]
+  - canonical_timeframe: "M3"
+    minutes: 3
+    aliases: ["3m", "m3", "M3"]
+  - canonical_timeframe: "M4"
+    minutes: 4
+    aliases: ["4m", "m4", "M4"]
+  - canonical_timeframe: "M5"
+    minutes: 5
+    aliases: ["5m", "m5", "M5"]
+  - canonical_timeframe: "M6"
+    minutes: 6
+    aliases: ["6m", "m6", "M6"]
+  - canonical_timeframe: "M10"
+    minutes: 10
+    aliases: ["10m", "m10", "M10"]
+  - canonical_timeframe: "M15"
+    minutes: 15
+    aliases: ["15m", "m15", "M15"]
+  - canonical_timeframe: "M30"
+    minutes: 30
+    aliases: ["30m", "m30", "M30"]
+  - canonical_timeframe: "H1"
+    minutes: 60
+    aliases: ["1h", "h1", "H1", "60m"]
+  - canonical_timeframe: "H4"
+    minutes: 240
+    aliases: ["4h", "h4", "H4", "240m"]
+  - canonical_timeframe: "D1"
+    minutes: 1440
+    aliases: ["1d", "d1", "D1", "1440m"]
+
+Timeframe policy:
+- unknown alias -> quarantine
+- missing timeframe allowed only for note artifacts
+- coverage completeness checks must use mandatory_research_timeframes only
+
+====================================================================
+A13.8 artifact_type_registry.yaml
+====================================================================
+
+Purpose:
+- ระบุ artifact classes ที่ bridge รองรับ และสิทธิการ promote เข้า registry กลาง
+
+Required fields:
+- registry_version
+- updated_at_utc
+- owner
+- artifact_types
+
+Artifact type fields:
+- artifact_type
+- category
+- parser_name
+- registry_target
+- can_promote_package_candidate
+- can_update_notes
+- can_update_metrics
+- quarantine_policy
+- notes
+
+Example:
+
+registry_version: "1.0"
+updated_at_utc: "2026-03-20T00:00:00Z"
+owner: "platform"
+artifact_types:
+  - artifact_type: "component_package_result"
+    category: "research_result"
+    parser_name: "json_metrics_parser_v1"
+    registry_target: "research_backtest_runs"
+    can_promote_package_candidate: true
+    can_update_notes: false
+    can_update_metrics: true
+    quarantine_policy: "strict"
+    notes: "Primary candidate source"
+
+  - artifact_type: "validation_summary_csv"
+    category: "validation_result"
+    parser_name: "csv_metrics_parser_v1"
+    registry_target: "research_validation_runs"
+    can_promote_package_candidate: true
+    can_update_notes: false
+    can_update_metrics: true
+    quarantine_policy: "strict"
+    notes: "Validation evidence"
+
+  - artifact_type: "research_notes_text"
+    category: "manual_context"
+    parser_name: "text_notes_parser_v1"
+    registry_target: "research_notes"
+    can_promote_package_candidate: false
+    can_update_notes: true
+    can_update_metrics: false
+    quarantine_policy: "lenient"
+    notes: "Supplemental human notes"
+
+====================================================================
+A13.9 PARSER CONTRACT
+====================================================================
+
+Every parser must return normalized envelope:
+- ingestion_run_id
+- source_path
+- source_filename
+- matched_pattern_id
+- artifact_type
+- parser_name
+- parse_status
+- raw_fields_json
+- extracted_fields_json
+- normalized_fields_json
+- canonical_metrics_json
+- notes_text
+- warnings_json
+- quarantine_reason
+
+parse_status enum:
+- PARSED
+- PARSED_WITH_WARNINGS
+- QUARANTINED
+- FAILED
+
+Parser must not write registry directly.
+Parser only emits normalized envelope.
+Writer/promoter layer decides insert/update/quarantine.
+
+====================================================================
+A13.10 QUARANTINE REASON TAXONOMY
+====================================================================
+
+Lock quarantine reasons:
+- NO_PATTERN_MATCH
+- MULTIPLE_PATTERN_MATCH
+- PARSER_NOT_FOUND
+- PARSE_ERROR
+- MISSING_REQUIRED_FIELD
+- UNKNOWN_TIMEFRAME
+- AMBIGUOUS_STRATEGY_ALIAS
+- UNKNOWN_ARTIFACT_TYPE
+- INVALID_METRIC_VALUE
+- CONFLICTING_IDENTITY
+- DUPLICATE_ARTIFACT
+- REGISTRY_CONFIG_INVALID
+
+All quarantine reasons must be stable codes.
+Do not use free-text as primary code.
+Free-text allowed only in quarantine_detail.
+
+====================================================================
+A13.11 FIELD-LEVEL MAPPING STANDARD
+====================================================================
+
+Minimal normalized fields after YAML-driven parsing:
+- canonical_strategy_id
+- canonical_timeframe
+- artifact_type
+- source_family
+- package_name
+- package_version
+- strategy_family
+- layer_type
+- test_window_start_utc
+- test_window_end_utc
+- run_label
+- notes_text
+- canonical_metrics_json
+- raw_metrics_json
+- source_file_sha256
+- artifact_identity_hash
+
+artifact_identity_hash components:
+- normalized source family
+- canonical strategy id
+- canonical timeframe
+- package_name
+- package_version
+- test_window_start_utc
+- test_window_end_utc
+- source_file_sha256
+
+Hash policy:
+- sha256 hex lowercase
+- stable order of fields
+- empty string for missing optional fields
+
+====================================================================
+A13.12 GOVERNANCE RULES
+====================================================================
+
+1. Registry change requires version bump
+2. Alias removal is discouraged; prefer deprecate status
+3. Pattern priority change requires regression test
+4. Any new mandatory metric must be backward-compatible
+5. Any parser_name referenced in YAML must exist in code
+6. Any canonical strategy id must be unique forever
+7. Any canonical timeframe outside locked research set requires explicit approval
+8. Weekly pipeline must store registry checksum snapshot per run
+
+====================================================================
+A13.13 EXAMPLE IMPLEMENTATION ORDER
+====================================================================
+
+Step 1:
+Implement YAML loader + schema validator
+
+Step 2:
+Implement bridge_registry_manifest loader and checksum verification
+
+Step 3:
+Implement timeframe alias resolver
+
+Step 4:
+Implement strategy alias resolver
+
+Step 5:
+Implement metric alias normalizer
+
+Step 6:
+Implement file pattern matcher
+
+Step 7:
+Implement normalized parser envelope
+
+Step 8:
+Implement quarantine writer
+
+Step 9:
+Implement registry promoter
+
+Step 10:
+Run bridge regression test against current legacy outputs
+
+====================================================================
+A13.14 PROGRESSION CHECKLIST
+====================================================================
+
+[ ] A13.1 bridge_registry_manifest.yaml locked
+[ ] A13.2 bridge_file_patterns.yaml schema locked
+[ ] A13.3 metric_alias_registry.yaml schema locked
+[ ] A13.4 strategy_alias_registry.yaml schema locked
+[ ] A13.5 timeframe_registry.yaml schema locked
+[ ] A13.6 artifact_type_registry.yaml schema locked
+[ ] A13.7 parser normalized envelope locked
+[ ] A13.8 quarantine taxonomy locked
+[ ] A13.9 artifact identity hash locked
+[ ] A13.10 checksum snapshot policy locked
+[ ] A13.11 regression test set defined
+
+====================================================================
+A13.15 STEP UPDATE TEMPLATE
+====================================================================
+
+STEP_UPDATE
+version: v2.4.0
+phase: A13
+title: Bridge YAML Contract Spec
+status: COMPLETED
+completed_at_utc: <fill>
+inputs:
+  - A11 migration bridge spec
+  - A12 bridge file pattern registry spec
+outputs:
+  - bridge YAML schemas defined
+  - parser envelope contract defined
+  - quarantine taxonomy defined
+decisions_locked:
+  - YAML-driven bridge parsing
+  - additive registry evolution
+  - checksum snapshot per run
+risks:
+  - legacy filenames may still require extra aliases
+next_step:
+  - A14 YAML schema validation and loader spec
+
+====================================================================
+A13.16 STRATEGY / LOGIC RECORD TEMPLATE
+====================================================================
+
+STRATEGY_LOGIC_RECORD
+record_version: v1
+canonical_strategy_id: <fill>
+strategy_family: <entry|exit|micro_exit>
+layer_type: <fill>
+legacy_aliases:
+  - <fill>
+required_patterns:
+  - <pattern_id>
+required_metrics:
+  - <canonical_metric_key>
+mandatory_timeframes:
+  - M1
+  - M2
+  - M3
+  - M4
+  - M5
+  - M6
+  - M10
+  - M15
+  - M30
+  - H1
+  - H4
+  - D1
+promotion_rule: <fill>
+notes: <fill>
+
+# END OF DOCUMENT

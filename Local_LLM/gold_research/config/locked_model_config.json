@@ -1,0 +1,82 @@
+{
+  "version": "v1.0.0",
+  "project_name": "gold_research",
+  "canonical_symbol": "XAUUSD",
+  "execution_symbol_mapping_note": "Map broker symbol only at execution layer, not dataset/backtest layer.",
+  "locked_base_model": {
+    "core_base": [
+      "market_structure",
+      "BOS",
+      "CHOCH",
+      "swing_high_low",
+      "pullback_zone"
+    ],
+    "filter_layer": [
+      "ATR",
+      "ADX",
+      "EMA20",
+      "EMA50"
+    ],
+    "rules": {
+      "price_action_is_primary": true,
+      "indicator_is_filter_only": true,
+      "forbid_indicator_crossover_as_main_base": true
+    }
+  },
+  "ema_research_rule": {
+    "enabled": true,
+    "purpose": "filter_only",
+    "fast_ema_min": 1,
+    "fast_ema_max": 50,
+    "slow_ema_min": 20,
+    "slow_ema_max": 100,
+    "constraint": "fast < slow",
+    "selection_rules": [
+      "must_use_minimum_trades",
+      "must_use_parameter_zone_stability",
+      "must_pass_out_of_sample",
+      "must_pass_walk_forward"
+    ]
+  },
+  "dataset_rule": {
+    "canonical_symbol": "XAUUSD",
+    "source_of_truth": "dataset/tf",
+    "source_generation": "resampled_from_m1_single_source",
+    "allowed_timeframes": [
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M5",
+      "M6",
+      "M10",
+      "M15",
+      "M30",
+      "H1",
+      "H4",
+      "D1"
+    ],
+    "forbid_external_mixed_datasets": true
+  },
+  "validation_rule": {
+    "required_phases": [
+      "in_sample",
+      "out_of_sample",
+      "walk_forward"
+    ],
+    "forbid_in_sample_only_decision": true
+  },
+  "evaluation_rule": {
+    "required_metrics": [
+      "net_profit",
+      "profit_factor",
+      "expectancy",
+      "max_drawdown",
+      "total_trades",
+      "win_rate",
+      "avg_win",
+      "avg_loss"
+    ],
+    "forbid_profit_only_selection": true
+  }
+}

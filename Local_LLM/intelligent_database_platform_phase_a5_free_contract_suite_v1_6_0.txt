@@ -1,0 +1,520 @@
+
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform Phase A5 - Free Data Contract Suite Spec
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a5_free_contract_suite_v1_6_0.txt
+# เวอร์ชัน: v1.6.0
+# ============================================================
+
+INTELLIGENT DATABASE PLATFORM
+PHASE A5: FREE DATA CONTRACT SUITE SPEC
+Version: v1.6.0
+
+GOAL
+- Lock the best free modern contract stack for MT5 OHLCV ingestion before Canonical DB.
+- Keep the critical path fast, deterministic, reproducible, and flexible for many future bots.
+- Separate data contract gate from dedup engine and from observability/reporting.
+
+============================================================
+A. FINAL DECISION: BEST FREE STACK
+============================================================
+
+A1. Critical-path contract stack (LOCKED)
+- Pandera = primary free contract engine inside Python pipeline
+- Polars native checks = fast pre-gate and deterministic normalization checks
+- DuckDB SQL assertions = cross-batch and batch-to-canonical validation
+- Custom row-hash dedup resolver = final deterministic duplicate/conflict resolver
+- Great Expectations Core = optional validation artifact/report layer only
+- Soda Core = NOT selected for the core pipeline
+
+A2. Why this is the best free choice
+- Pandera supports dataframe schema validation and supports Polars.
+- This matches the platform direction: Polars-first, Python-native, lightweight, fast to embed in jobs.
+- Great Expectations Core is strong for structured validations and validation artifacts, but should not own the performance-critical row gate.
+- Soda Core is open source, but current direction is increasingly centered on data contracts/platform workflow; it is less attractive than Pandera for a lean standalone local platform.
+
+A3. Core principle
+- Contract engine decides PASS / WARN / FAIL / QUARANTINE.
+- Dedup engine decides KEEP / REPLACE / MERGE / DROP.
+- Reporting layer stores evidence and audit trail.
+- No data quality framework is allowed to replace deterministic dedup logic.
+
+============================================================
+B. LAYERED VALIDATION MODEL
+============================================================
+
+Layer 0: Raw Batch Fingerprint
+Purpose:
+- Detect exact repeated batch imports before row processing.
+
+Tools:
+- Python hashlib
+- manifest table in DuckDB
+
+Checks:
+- source_file_hash
+- broker + symbol + timeframe + batch_time uniqueness
+- row_count fingerprint
+- min/max timestamp fingerprint
+
+Outputs:
+- ACCEPT_BATCH
+- SKIP_BATCH_ALREADY_IMPORTED
+- QUARANTINE_BATCH_CONFLICT
+
+Layer 1: Fast Structural Gate
+Purpose:
+- Reject broken MT5 payloads immediately with low overhead.
+
+Tools:
+- Polars
+
+Checks:
+- required columns exist
+- columns are castable to target dtypes
+- timestamp parse succeeds
+- timezone can be normalized to UTC
+- no impossible nulls in required OHLC fields
+- sortability by timestamp
+
+Outputs:
+- PASS_TO_PANDERA
+- FAIL_TO_QUARANTINE
+
+Layer 2: Contract Gate (PRIMARY FREE GATE)
+Purpose:
+- Enforce dataset contract before canonical ingestion.
+
+Tools:
+- Pandera
+
+Checks:
+- schema
+- dtype
+- uniqueness constraints
+- field ranges
+- logical OHLC rules
+- statistical sanity
+- distribution drift warnings
+- optional custom checks per broker/symbol
+
+Outputs:
+- PASS
+- WARN
+- FAIL
+- QUARANTINE_ROWS
+- QUARANTINE_BATCH
+
+Layer 3: Deterministic Dedup + Conflict Resolution
+Purpose:
+- Resolve duplicate timestamps and conflicting bars.
+
+Tools:
+- Polars + custom Python rules + DuckDB metadata log
+
+Rules:
+- exact row hash duplicate -> drop duplicate
+- same logical key and same OHLCV -> keep first canonical, log duplicate
+- same logical key but different OHLCV -> quarantine conflict unless replacement policy explicitly allows overwrite from higher-trust source
+- never silently overwrite canonical rows
+
+Outputs:
+- accepted rows
+- dropped duplicates
+- conflicting rows
+- replacement events
+
+Layer 4: Continuity + Resample Consistency
+Purpose:
+- Ensure M1 continuity and deterministic TF rebuild.
+
+Tools:
+- Polars + DuckDB
+
+Checks:
+- missing timestamp detection on trading sessions
+- duplicate timestamp check after dedup
+- resample invariants:
+  - TF open = first M1 open
+  - TF high = max M1 high
+  - TF low = min M1 low
+  - TF close = last M1 close
+  - TF volume = sum M1 volume
+
+Outputs:
+- continuity report
+- rebuild status
+- quarantine gaps/conflicts
+
+Layer 5: Validation Evidence + Reporting
+Purpose:
+- Store auditable evidence for weekly intelligence and engineering debugging.
+
+Tools:
+- DuckDB
+- JSON result files
+- optional Great Expectations Core result artifacts / data docs
+
+Outputs:
+- run result record
+- failed rows sample
+- metric summary
+- contract drift summary
+- weekly quality trend
+
+============================================================
+C. WHY PANDERA WINS AS PRIMARY FREE CONTRACT GATE
+============================================================
+
+C1. Technical reasons
+- Better fit for Python-first local jobs.
+- Simpler to embed directly in Polars-oriented ingestion jobs.
+- Supports dataframe schemas and statistical checks.
+- Lower architectural weight for a standalone local platform.
+- Easier to keep as code inside repo and version with strategy logic.
+
+C2. Why GX Core is not the primary gate
+- Strong choice for validation artifacts, documentation, and structured result handling.
+- But for a fast local ingestion path, GX should be secondary, not the hot-path validator.
+- Use GX only when the team wants rendered validation evidence and shared docs.
+
+C3. Why Soda Core is not selected
+- Good contracts engine, but less aligned with the desired lean local embedded path.
+- Better treated as future optional observability layer if the platform later grows into multi-service enterprise style operations.
+
+============================================================
+D. PANDERA CONTRACT SUITE FOR MT5 OHLCV
+============================================================
+
+Dataset name:
+- mt5_ohlcv_m1_raw_normalized
+
+Primary fields:
+- broker: str
+- account_id: str
+- symbol: str
+- timeframe: str
+- ts_utc: datetime[UTC]
+- open: float64
+- high: float64
+- low: float64
+- close: float64
+- tick_volume: int64
+- spread: int64 or float64 nullable
+- real_volume: int64 nullable
+- source_file: str nullable
+- ingest_run_id: str
+- row_hash: str
+- logical_key: str
+
+Contract severity classes:
+- HARD_FAIL = reject batch/rows
+- SOFT_WARN = ingest allowed but flagged
+- INFO = metrics only
+
+D1. Schema checks (HARD_FAIL)
+- all required columns exist
+- timeframe must equal M1 at canonical raw ingest layer
+- ts_utc must be timezone-aware UTC
+- open/high/low/close numeric
+- tick_volume integer and >= 0
+- symbol non-empty
+- broker non-empty
+- ingest_run_id non-empty
+- row_hash non-empty
+- logical_key non-empty
+
+D2. OHLC logical checks (HARD_FAIL)
+- high >= open
+- high >= close
+- high >= low
+- low <= open
+- low <= close
+- open > 0
+- high > 0
+- low > 0
+- close > 0
+- high - low >= 0
+
+D3. Timestamp checks
+HARD_FAIL:
+- ts_utc not null
+- no duplicated ts_utc within same broker/account/symbol/timeframe batch after standardization
+- ts_utc monotonic increasing after sort
+
+SOFT_WARN:
+- large gap detected inside expected session
+- suspicious out-of-session bars
+- too many identical timestamps across consecutive imports
+
+D4. Statistical anomaly checks
+SOFT_WARN by default:
+- abnormal spread spike vs rolling distribution
+- abnormal bar range vs rolling ATR proxy
+- too many zero-range bars in a rolling window
+- abnormal tick volume spike or collapse
+- repeated identical OHLC rows above threshold in rolling window
+- bar return z-score extreme
+
+Escalate to HARD_FAIL when:
+- anomaly rate exceeds configured batch threshold
+- or anomaly appears with timestamp conflicts and continuity violations together
+
+D5. Identity checks
+HARD_FAIL:
+- logical_key uniqueness in accepted dataset
+- row_hash uniqueness only for accepted canonical rows
+
+SOFT_WARN:
+- repeated row_hash across repeated imports
+- repeated logical_key from same source batch
+
+============================================================
+E. DEDUP / CONFLICT RESOLUTION STANDARD
+============================================================
+
+E1. Logical key
+logical_key = sha256(
+  broker + "|" +
+  account_id + "|" +
+  symbol + "|" +
+  timeframe + "|" +
+  ts_utc_iso8601
+)
+
+E2. Row hash
+row_hash = sha256(
+  logical_key + "|" +
+  open + "|" +
+  high + "|" +
+  low + "|" +
+  close + "|" +
+  tick_volume + "|" +
+  spread + "|" +
+  real_volume
+)
+
+E3. Resolution rules
+Case 1:
+- same logical_key + same row_hash
+Action:
+- drop as exact duplicate
+
+Case 2:
+- same logical_key + different row_hash + source priority differs
+Action:
+- quarantine conflict
+- optionally replace only if source policy says new source is authoritative
+
+Case 3:
+- same logical_key + different row_hash + same source priority
+Action:
+- quarantine conflict
+- no auto-merge
+
+Case 4:
+- re-import of identical file fingerprint
+Action:
+- skip entire batch
+
+E4. Trust priority example
+Highest to lowest:
+1. MT5 direct live pull
+2. MT5 verified export
+3. manually copied CSV
+4. unknown external transformed file
+
+============================================================
+F. DUCKDB REGISTRY TABLES
+============================================================
+
+1. ingest_runs
+- ingest_run_id
+- source_type
+- source_path
+- source_file_hash
+- started_at_utc
+- finished_at_utc
+- status
+- input_row_count
+- accepted_row_count
+- dropped_duplicate_count
+- quarantined_row_count
+- notes
+
+2. batch_quality_results
+- ingest_run_id
+- check_name
+- severity
+- passed
+- failed_row_count
+- warning_row_count
+- metric_value
+- threshold_value
+- sample_ref
+
+3. quarantine_rows
+- ingest_run_id
+- logical_key
+- row_hash
+- quarantine_reason
+- severity
+- raw_payload_json
+- created_at_utc
+
+4. canonical_row_events
+- logical_key
+- event_type
+- old_row_hash
+- new_row_hash
+- decision
+- ingest_run_id
+- event_ts_utc
+
+5. continuity_reports
+- ingest_run_id
+- symbol
+- session_date
+- expected_bars
+- actual_bars
+- missing_bars
+- duplicate_bars
+- status
+
+============================================================
+G. WEEKLY RUN POLICY
+============================================================
+
+Weekly master run sequence:
+1. pull latest MT5 data
+2. compute batch fingerprint
+3. Layer 0 check
+4. Layer 1 Polars structural gate
+5. Layer 2 Pandera contract validation
+6. Layer 3 dedup/conflict resolution
+7. write canonical accepted rows
+8. write quarantine rows
+9. run continuity validation
+10. rebuild impacted TF only
+11. refresh features
+12. refresh backtests
+13. refresh labels
+14. refresh memory cases
+15. refresh vector retrieval index
+16. publish weekly intelligence snapshot
+17. append progression update text
+
+Key policy:
+- Do not run full historical rebuild unless schema, feature logic, or backtest logic changed materially.
+- Weekly default should be incremental.
+
+============================================================
+H. BOT ACCESS FLEXIBILITY
+============================================================
+
+Support both:
+1. Local Python SDK
+2. Local HTTP API
+
+Why:
+- SDK = lowest latency for local bots
+- HTTP API = flexible for future multi-process / multi-bot / remote deployment
+
+Core services to expose:
+- get_latest_regime_snapshot(symbol, tf)
+- get_best_strategy_package(symbol, tf, regime)
+- get_micro_exit_package(symbol, tf, regime)
+- get_similar_cases(symbol, tf, setup_features, top_k)
+- get_risk_constraints(symbol, tf, regime)
+- publish_trade_outcome(payload)
+- publish_execution_feedback(payload)
+
+============================================================
+I. FREE-ONLY TOOL LOCK
+============================================================
+
+Allowed core tools:
+- Python
+- Polars
+- Pandera
+- DuckDB
+- Parquet
+- Numba
+- Ray
+- Qdrant Community
+- FastAPI
+- Uvicorn
+- Pydantic
+
+Optional free add-on:
+- Great Expectations Core only for artifacts/reporting, not critical path
+
+Not selected as core:
+- Soda Core
+
+============================================================
+J. PROJECT RULES LOCKED
+============================================================
+
+1. Critical path must remain fully free.
+2. Critical path must remain Python-native.
+3. Critical path must remain deterministic and benchmarkable.
+4. No paid SaaS dependency is allowed in ingestion, validation, dedup, canonicalization, or weekly refresh.
+5. Validation evidence must be stored locally in open formats.
+6. Every accepted canonical row must be reproducible from source and run metadata.
+7. All future bots must consume central intelligence, not rebuild their own side memory.
+
+============================================================
+K. PROGRESSION CHECKLIST
+============================================================
+
+[ ] A5.1 Lock free contract stack
+[ ] A5.2 Define Pandera schemas
+[ ] A5.3 Define anomaly thresholds
+[ ] A5.4 Define quarantine policy
+[ ] A5.5 Define DuckDB registry tables
+[ ] A5.6 Define weekly pipeline contract
+[ ] A5.7 Define API/SDK service contract
+[ ] A5.8 Record strategy/logic impact notes
+
+============================================================
+L. STEP UPDATE TEMPLATE
+============================================================
+
+STEP UPDATE
+- step_id:
+- title:
+- version:
+- date_utc:
+- goal:
+- files_or_docs_created:
+- schema_or_contract_changed:
+- source_data_scope:
+- quality_result_summary:
+- duplicate_result_summary:
+- quarantine_summary:
+- continuity_summary:
+- strategy_logic_impact:
+- weekly_run_impact:
+- next_step:
+
+============================================================
+M. STRATEGY / LOGIC USE RECORD TEMPLATE
+============================================================
+
+STRATEGY LOGIC RECORD
+- record_id:
+- package_family:
+- timeframe:
+- market_regime:
+- entry_logic:
+- filter_logic:
+- micro_exit_logic:
+- tp_logic:
+- sl_logic:
+- validation_window:
+- walk_forward_result:
+- failure_patterns:
+- promoted_to_registry:
+- notes:
+
+END OF DOCUMENT

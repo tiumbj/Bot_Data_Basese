@@ -1,0 +1,61 @@
+# version: v1.0.1
+# file: C:\Data\Bot\Local_LLM\gold_research\jobs\research_requirements_full_tournament_phase1.yaml
+
+project:
+  project_id: gold_research_full_tournament_phase1_v1
+  project_name: Gold Research Full Tournament Phase 1
+  version: v1.0.1
+
+paths:
+  output_root: C:\Data\Bot\cbr\rfp1
+  manifest_jsonl: C:\Data\Bot\central_backtest_results\research_jobs\research_job_manifest_full_tournament_phase1.jsonl
+  manifest_summary_json: C:\Data\Bot\central_backtest_results\research_jobs\research_job_manifest_full_tournament_phase1_summary.json
+  state_jsonl: C:\Data\Bot\central_backtest_results\research_jobs\job_state_full_tournament_phase1.jsonl
+
+dataset:
+  symbol: XAUUSD
+  tf_to_ohlc:
+    M1: C:\Data\Bot\central_market_data\tf\XAUUSD_M1.csv
+    M2: C:\Data\Bot\central_market_data\tf\XAUUSD_M2.csv
+    M3: C:\Data\Bot\central_market_data\tf\XAUUSD_M3.csv
+    M4: C:\Data\Bot\central_market_data\tf\XAUUSD_M4.csv
+    M5: C:\Data\Bot\central_market_data\tf\XAUUSD_M5.csv
+    M6: C:\Data\Bot\central_market_data\tf\XAUUSD_M6.csv
+    M10: C:\Data\Bot\central_market_data\tf\XAUUSD_M10.csv
+    M15: C:\Data\Bot\central_market_data\tf\XAUUSD_M15.csv
+    M30: C:\Data\Bot\central_market_data\tf\XAUUSD_M30.csv
+    H1: C:\Data\Bot\central_market_data\tf\XAUUSD_H1.csv
+    H4: C:\Data\Bot\central_market_data\tf\XAUUSD_H4.csv
+    D1: C:\Data\Bot\central_market_data\tf\XAUUSD_D1.csv
+
+selection:
+  stage_name: stage_3_full_tournament_phase1
+  family_id: deep_pullback_continuation
+  strategy_ids:
+    - locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+  entry_style: deep
+  micro_exit_ids:
+    - micro_exit_v2_fast_invalidation
+    - micro_exit_v2_momentum_fade
+  cooldown_bars:
+    - 0
+    - 3
+  regime_filter_ids:
+    - regime_filter_off
+    - regime_filter_trend_only
+    - regime_filter_trend_or_neutral
+  expected_jobs: 144
+
+defaults:
+  risk_model_id: fixed_fractional_1pct
+  execution_model_id: next_bar_market
+  spread_model_id: static_spread_baseline
+  slippage_model_id: static_slippage_baseline
+  train_window_id: insample
+  validation_mode: insample
+  tags:
+    - full_tournament_phase1
+    - all_timeframes
+    - supported_native_logic_only
+    - no_structure_trail
+    - no_cooldown_6

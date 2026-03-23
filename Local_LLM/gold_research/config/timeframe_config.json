@@ -1,0 +1,65 @@
+{
+  "version": "v1.0.0",
+  "canonical_symbol": "XAUUSD",
+  "timeframes": {
+    "M1": {
+      "pandas_rule": "1min",
+      "family": "execution"
+    },
+    "M2": {
+      "pandas_rule": "2min",
+      "family": "execution"
+    },
+    "M3": {
+      "pandas_rule": "3min",
+      "family": "execution"
+    },
+    "M4": {
+      "pandas_rule": "4min",
+      "family": "execution"
+    },
+    "M5": {
+      "pandas_rule": "5min",
+      "family": "execution"
+    },
+    "M6": {
+      "pandas_rule": "6min",
+      "family": "execution"
+    },
+    "M10": {
+      "pandas_rule": "10min",
+      "family": "execution"
+    },
+    "M15": {
+      "pandas_rule": "15min",
+      "family": "setup"
+    },
+    "M30": {
+      "pandas_rule": "30min",
+      "family": "setup"
+    },
+    "H1": {
+      "pandas_rule": "1h",
+      "family": "context"
+    },
+    "H4": {
+      "pandas_rule": "4h",
+      "family": "context"
+    },
+    "D1": {
+      "pandas_rule": "1D",
+      "family": "regime"
+    }
+  },
+  "resample_rule": {
+    "open": "first",
+    "high": "max",
+    "low": "min",
+    "close": "last",
+    "volume": "sum"
+  },
+  "timezone_policy": {
+    "mode": "keep_source_timestamp",
+    "note": "Timezone conversion not applied in dataset bootstrap step."
+  }
+}

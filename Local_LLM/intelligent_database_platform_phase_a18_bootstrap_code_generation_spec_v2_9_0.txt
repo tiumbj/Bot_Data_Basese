@@ -1,0 +1,756 @@
+# ============================================================
+# ชื่อเอกสาร: Intelligent Database Platform - Phase A18 Bootstrap Code Generation Spec
+# ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a18_bootstrap_code_generation_spec_v2_9_0.txt
+# เวอร์ชัน: v2.9.0
+# ============================================================
+
+TITLE: INTELLIGENT DATABASE PLATFORM - PHASE A18 BOOTSTRAP CODE GENERATION SPEC
+VERSION: v2.9.0
+STATUS: SOLID-READY FOR PYTHON FILE GENERATION
+SCOPE: BOOTSTRAP LAYER ONLY
+POLICY: ADDITIVE / PRODUCTION-FIRST / FAIL-FAST / NO ARCHITECTURE SWING
+
+============================================================
+1. OBJECTIVE
+============================================================
+
+A18 converts A17 bootstrap implementation plan into code-generation level specification.
+
+This document defines:
+- exact Python module generation order
+- file-by-file responsibilities
+- class/function blueprint
+- typing rules
+- error model
+- config loading model
+- startup flow
+- logging flow
+- manifest flow
+- health/startup validation flow
+- acceptance conditions for first executable bootstrap
+
+This phase DOES NOT implement:
+- registry loader
+- ingest pipeline
+- bridge parser
+- backtest engine
+- service API routes
+- Qdrant retrieval logic
+
+Those remain dependent on stable bootstrap completion.
+
+============================================================
+2. BOOTSTRAP GENERATION LOCK
+============================================================
+
+All generated bootstrap code must follow these rules:
+
+2.1 Structural rules
+- one clear responsibility per file
+- no business logic inside bootstrap files
+- no implicit global mutable state except approved cached singleton guards
+- no direct print as main logging path
+- no hidden path guessing outside paths.py and settings.py
+- no environment reads outside env.py / settings.py
+- no YAML parsing inside bootstrap
+- no database calls inside bootstrap except writability/startup probe if explicitly approved
+
+2.2 Runtime rules
+- fail-fast on invalid root/config/path
+- immutable resolved settings after load
+- startup returns typed result object
+- startup can run multiple times safely
+- logger init must be idempotent
+- manifest write must be atomic
+
+2.3 Code quality rules
+- Python 3.11+
+- strict type hints
+- dataclass/frozen where appropriate
+- pathlib only for paths
+- no magic strings outside constants.py
+- narrow custom exceptions
+- UTC timestamps only
+- JSON manifest only
+
+============================================================
+3. TARGET FILES
+============================================================
+
+Generation order is locked as follows:
+
+01. platform_core/version.py
+02. platform_core/constants.py
+03. platform_core/exceptions.py
+04. platform_core/paths.py
+05. platform_core/env.py
+06. platform_core/settings.py
+07. platform_core/logging_config.py
+08. platform_core/runtime_manifest.py
+09. platform_core/health/startup_checks.py
+10. platform_core/init_platform.py
+
+============================================================
+4. DIRECTORY TARGET
+============================================================
+
+Suggested root:
+C:\Data\Bot\Local_LLM\gold_research\intelligent_database_platform\
+
+Suggested package tree:
+
+intelligent_database_platform/
+    platform_core/
+        __init__.py
+        version.py
+        constants.py
+        exceptions.py
+        paths.py
+        env.py
+        settings.py
+        logging_config.py
+        runtime_manifest.py
+        init_platform.py
+        health/
+            __init__.py
+            startup_checks.py
+
+============================================================
+5. FILE-BY-FILE CODE GENERATION SPEC
+============================================================
+
+------------------------------------------------------------
+5.1 version.py
+------------------------------------------------------------
+
+Purpose:
+- single source of truth for bootstrap/runtime version
+- expose version tuple/string
+- support manifest stamping
+
+Required exports:
+- APP_NAME: str
+- PLATFORM_NAME: str
+- BOOTSTRAP_VERSION: str
+- PYTHON_MIN_VERSION: tuple[int, int]
+
+Required functions:
+- get_version_string() -> str
+- get_runtime_banner() -> str
+
+Rules:
+- no imports from any local module
+- pure constant file + tiny helper functions only
+
+Acceptance:
+- importable without side effects
+- version string stable
+- banner returns deterministic string
+
+------------------------------------------------------------
+5.2 constants.py
+------------------------------------------------------------
+
+Purpose:
+- centralize stable literal values used across bootstrap layer
+
+Required contents:
+- default folder names
+- default file names
+- environment variable names
+- supported modes
+- log channel names
+- startup status codes
+- health check names
+
+Suggested groups:
+- PATH_CONSTANTS
+- ENV_CONSTANTS
+- LOGGING_CONSTANTS
+- STARTUP_CONSTANTS
+- MANIFEST_CONSTANTS
+
+Preferred pattern:
+- module-level UPPER_CASE constants
+- grouped comments, not nested dict sprawl unless justified
+
+Acceptance:
+- no duplicated literals used elsewhere
+- all constants importable without side effects
+
+------------------------------------------------------------
+5.3 exceptions.py
+------------------------------------------------------------
+
+Purpose:
+- define narrow exception hierarchy for bootstrap failures
+
+Required hierarchy:
+- PlatformError(Exception)
+- BootstrapError(PlatformError)
+- PathResolutionError(BootstrapError)
+- EnvConfigError(BootstrapError)
+- SettingsValidationError(BootstrapError)
+- LoggingInitError(BootstrapError)
+- ManifestWriteError(BootstrapError)
+- StartupCheckError(BootstrapError)
+
+Rules:
+- no business exceptions
+- optional payload fields may use dataclass exception if useful
+- clean __str__ messages required
+
+Acceptance:
+- each error maps to one failure class only
+- init_platform can catch BootstrapError root safely
+
+------------------------------------------------------------
+5.4 paths.py
+------------------------------------------------------------
+
+Purpose:
+- resolve all root/platform/runtime/config/data/log/temp paths deterministically
+
+Required dataclass:
+- PlatformPaths(frozen=True)
+
+Suggested fields:
+- project_root: Path
+- platform_root: Path
+- config_dir: Path
+- runtime_dir: Path
+- logs_dir: Path
+- temp_dir: Path
+- manifests_dir: Path
+- health_dir: Path
+- registry_dir: Path
+- lake_dir: Path
+- quarantine_dir: Path
+
+Required functions:
+- resolve_project_root(explicit_root: str | Path | None = None) -> Path
+- build_platform_paths(project_root: str | Path | None = None) -> PlatformPaths
+- ensure_base_directories(paths: PlatformPaths) -> None
+
+Rules:
+- always return absolute resolved paths
+- no silent fallback to invalid roots
+- create only approved directories
+- do not create business-layer directories not needed for bootstrap
+
+Acceptance:
+- same input root returns same path object values
+- invalid root raises PathResolutionError
+- ensure_base_directories idempotent
+
+------------------------------------------------------------
+5.5 env.py
+------------------------------------------------------------
+
+Purpose:
+- read environment variables and .env overlay safely
+- provide normalized raw env access for settings layer
+
+Required dataclass:
+- RawEnvConfig(frozen=True)
+
+Suggested fields:
+- app_env: str
+- log_level: str
+- project_root: str | None
+- platform_root: str | None
+- runtime_mode: str
+- write_manifest: bool
+- startup_check_strict: bool
+- timezone_name: str
+
+Required functions:
+- load_dotenv_if_present(root: Path | None = None) -> None
+- read_raw_env() -> RawEnvConfig
+- parse_bool_env(value: str | None, default: bool) -> bool
+
+Rules:
+- all parsing centralized here
+- no path creation here
+- normalize blanks to None when appropriate
+- do not validate deep semantics here
+
+Acceptance:
+- blank env values handled consistently
+- bool parsing deterministic
+
+------------------------------------------------------------
+5.6 settings.py
+------------------------------------------------------------
+
+Purpose:
+- resolve validated immutable runtime settings from env + defaults + paths
+
+Required dataclasses:
+- LoggingSettings(frozen=True)
+- ManifestSettings(frozen=True)
+- StartupSettings(frozen=True)
+- PlatformSettings(frozen=True)
+
+Suggested PlatformSettings fields:
+- app_name: str
+- platform_name: str
+- environment: str
+- runtime_mode: str
+- timezone_name: str
+- paths: PlatformPaths
+- logging: LoggingSettings
+- manifest: ManifestSettings
+- startup: StartupSettings
+- bootstrap_version: str
+
+Required functions:
+- build_settings(explicit_root: str | Path | None = None) -> PlatformSettings
+- validate_runtime_mode(value: str) -> str
+- validate_environment(value: str) -> str
+
+Rules:
+- final settings object must be immutable
+- call paths builder here
+- call env loader/reader here
+- perform semantic validation here
+- no logger creation here
+
+Acceptance:
+- invalid environment/mode raises SettingsValidationError
+- repeated calls with same env produce same resolved settings
+
+------------------------------------------------------------
+5.7 logging_config.py
+------------------------------------------------------------
+
+Purpose:
+- centralized logging bootstrap with idempotent initialization
+
+Required dataclass:
+- LoggingBootstrapResult(frozen=True)
+
+Suggested fields:
+- initialized: bool
+- log_file_path: Path
+- logger_name: str
+- level: str
+
+Required functions:
+- configure_logging(settings: PlatformSettings) -> LoggingBootstrapResult
+- get_platform_logger(name: str | None = None) -> logging.Logger
+- reset_logging_for_tests() -> None
+
+Rules:
+- support console + file handlers
+- avoid duplicate handlers on repeated init
+- standard formatter with UTC timestamp
+- logging path comes from settings.paths/logging settings only
+
+Acceptance:
+- second configure call does not duplicate handlers
+- logger usable immediately after init
+- failures raise LoggingInitError
+
+------------------------------------------------------------
+5.8 runtime_manifest.py
+------------------------------------------------------------
+
+Purpose:
+- create immutable startup manifest snapshot and persist atomically
+
+Required dataclasses:
+- RuntimeManifest(frozen=True)
+- ManifestWriteResult(frozen=True)
+
+Suggested RuntimeManifest fields:
+- manifest_id: str
+- bootstrap_version: str
+- created_utc: str
+- environment: str
+- runtime_mode: str
+- project_root: str
+- platform_root: str
+- logs_dir: str
+- runtime_dir: str
+- hostname: str
+- python_version: str
+- pid: int
+
+Required functions:
+- build_runtime_manifest(settings: PlatformSettings) -> RuntimeManifest
+- write_manifest_atomic(manifest: RuntimeManifest, output_path: Path) -> ManifestWriteResult
+- manifest_to_dict(manifest: RuntimeManifest) -> dict
+
+Rules:
+- write via temp file then atomic replace
+- JSON only
+- do not embed secrets
+- manifest_id deterministic enough for traceability, unique enough per startup
+
+Acceptance:
+- written file valid JSON
+- partial file not visible if write fails
+- repeated writes create clear traceable manifests
+
+------------------------------------------------------------
+5.9 health/startup_checks.py
+------------------------------------------------------------
+
+Purpose:
+- run startup health checks before platform activation
+
+Required dataclasses:
+- StartupCheckResult(frozen=True)
+- StartupCheckReport(frozen=True)
+
+Suggested checks:
+- python_version_ok
+- project_root_exists
+- required_dirs_writable
+- manifest_dir_writable
+- runtime_dir_writable
+- temp_dir_writable
+- environment_supported
+- runtime_mode_supported
+
+Required functions:
+- run_startup_checks(settings: PlatformSettings) -> StartupCheckReport
+- check_python_version() -> StartupCheckResult
+- check_directory_writable(path: Path, check_name: str) -> StartupCheckResult
+
+Rules:
+- report should include pass/fail per check
+- strict mode should raise StartupCheckError on critical failure
+- non-strict mode can return report with failed checks only if explicitly allowed
+
+Acceptance:
+- report is serializable
+- failures are traceable
+- critical path checks enforced consistently
+
+------------------------------------------------------------
+5.10 init_platform.py
+------------------------------------------------------------
+
+Purpose:
+- orchestration entrypoint for bootstrap startup
+
+Required dataclasses:
+- PlatformInitResult(frozen=True)
+
+Suggested fields:
+- settings: PlatformSettings
+- logging_result: LoggingBootstrapResult
+- startup_report: StartupCheckReport
+- manifest_result: ManifestWriteResult | None
+- initialized_utc: str
+
+Required functions:
+- initialize_platform(explicit_root: str | Path | None = None) -> PlatformInitResult
+- initialize_platform_once(explicit_root: str | Path | None = None) -> PlatformInitResult
+- reset_init_guard_for_tests() -> None
+
+Locked startup sequence:
+1. load/resolve settings
+2. ensure base directories
+3. configure logging
+4. run startup checks
+5. build manifest
+6. write manifest if enabled
+7. return typed init result
+
+Rules:
+- no registry/bridge/db/backtest init here yet
+- once-guard allowed but resettable for tests
+- catch and re-raise typed bootstrap failures only
+
+Acceptance:
+- one call brings platform to bootstrap-ready state
+- second once-call reuses safe initialized state
+- startup ordering deterministic
+
+============================================================
+6. IMPORT BOUNDARY RULES
+============================================================
+
+Allowed dependency direction:
+
+version.py -> none local
+constants.py -> none local
+exceptions.py -> none local
+paths.py -> constants, exceptions
+env.py -> constants, exceptions
+settings.py -> version, constants, exceptions, paths, env
+logging_config.py -> constants, exceptions, settings
+runtime_manifest.py -> constants, exceptions, settings, version
+health/startup_checks.py -> constants, exceptions, settings
+init_platform.py -> exceptions, paths, settings, logging_config, runtime_manifest, startup_checks
+
+Forbidden:
+- reverse imports from low-level modules into high-level runtime modules
+- circular imports
+- any bootstrap module importing future business modules
+
+============================================================
+7. TYPING STANDARD
+============================================================
+
+Mandatory:
+- from __future__ import annotations
+- pathlib.Path
+- dataclass(frozen=True, slots=True) where practical
+- explicit return types on all public functions
+- TypedDict only if dict payload unavoidable
+- Optional only when absence is real state
+
+Avoid:
+- Any
+- untyped dict sprawl
+- mutable default args
+- implicit None returns
+
+============================================================
+8. ERROR HANDLING MODEL
+============================================================
+
+Principle:
+- each layer raises its own narrow exception
+- init_platform catches unexpected exceptions only to wrap them into BootstrapError when appropriate
+- log context should include module, check_name, path, and root cause
+- error messages must be operationally useful
+
+Preferred format:
+"[MODULE] action_failed | reason=... | path=... | details=..."
+
+============================================================
+9. LOGGING MODEL
+============================================================
+
+Log requirements:
+- UTC timestamp
+- level
+- logger name
+- event message
+- optional structured extra fields when useful
+
+Bootstrap events to log:
+- settings_resolved
+- base_directories_ensured
+- logging_initialized
+- startup_checks_started
+- startup_checks_completed
+- manifest_built
+- manifest_written
+- platform_initialized
+
+============================================================
+10. MANIFEST MODEL
+============================================================
+
+Manifest policy:
+- one JSON manifest per successful startup
+- latest pointer may be added later, not required in A18
+- manifest path under runtime/manifests/
+- filename format:
+  bootstrap_manifest_{utc_compact}_{pid}.json
+
+Manifest must NOT contain:
+- secrets
+- API keys
+- tokens
+- raw env dump
+
+============================================================
+11. STARTUP CHECK CRITICALITY
+============================================================
+
+Critical checks:
+- python version
+- resolved root exists
+- runtime dir writable
+- manifests dir writable when manifest enabled
+- logs dir writable
+- supported environment
+- supported runtime mode
+
+Non-critical checks allowed later, not in A18:
+- external service reachable
+- DuckDB file healthy
+- Qdrant alive
+- MT5 reachable
+
+============================================================
+12. CODE GENERATION ORDER
+============================================================
+
+Step 1:
+Generate version.py
+
+Step 2:
+Generate constants.py
+
+Step 3:
+Generate exceptions.py
+
+Step 4:
+Generate paths.py and verify directory resolution
+
+Step 5:
+Generate env.py and verify env parsing
+
+Step 6:
+Generate settings.py and verify immutable resolved config
+
+Step 7:
+Generate logging_config.py and verify idempotent logging
+
+Step 8:
+Generate runtime_manifest.py and verify atomic JSON write
+
+Step 9:
+Generate startup_checks.py and verify check report behavior
+
+Step 10:
+Generate init_platform.py and run bootstrap smoke test
+
+============================================================
+13. ACCEPTANCE GATES
+============================================================
+
+Gate A:
+- all modules import cleanly
+- no circular import
+- no side-effect initialization on import
+
+Gate B:
+- settings build works from empty/default environment
+- root resolution deterministic
+- directories created correctly
+
+Gate C:
+- logging init idempotent
+- manifest writes atomic JSON
+- startup checks produce typed report
+
+Gate D:
+- initialize_platform() returns complete typed result
+- initialize_platform_once() safe on repeated calls
+
+Only after Gate D passes may registry loader implementation begin.
+
+============================================================
+14. TEST PLAN
+============================================================
+
+Minimum tests for bootstrap:
+
+14.1 version tests
+- version string format
+- min python tuple available
+
+14.2 paths tests
+- explicit root resolution
+- invalid root rejection
+- directory creation idempotence
+
+14.3 env tests
+- bool parsing
+- blank normalization
+- .env optional load path
+
+14.4 settings tests
+- defaults build
+- invalid env rejection
+- invalid runtime mode rejection
+
+14.5 logging tests
+- configure once
+- configure twice without duplicate handlers
+- log file path created
+
+14.6 manifest tests
+- manifest dict serializable
+- atomic write success
+- no secrets leaked
+
+14.7 startup checks tests
+- writable directory pass
+- unwritable path fail
+- report aggregate behavior
+
+14.8 init tests
+- initialize full success
+- once guard success
+- reset guard for tests
+
+============================================================
+15. PROGRESSION CHECKLIST
+============================================================
+
+[ ] A18.1 version.py code spec locked
+[ ] A18.2 constants.py code spec locked
+[ ] A18.3 exceptions.py code spec locked
+[ ] A18.4 paths.py code spec locked
+[ ] A18.5 env.py code spec locked
+[ ] A18.6 settings.py code spec locked
+[ ] A18.7 logging_config.py code spec locked
+[ ] A18.8 runtime_manifest.py code spec locked
+[ ] A18.9 startup_checks.py code spec locked
+[ ] A18.10 init_platform.py code spec locked
+[ ] A18.11 import boundary verified
+[ ] A18.12 acceptance gates A-D defined
+[ ] A18.13 bootstrap test plan defined
+
+============================================================
+16. STEP UPDATE TEMPLATE
+============================================================
+
+STEP_ID:
+DATE_UTC:
+VERSION:
+MODULE_NAME:
+STATUS: PASS / WARN / FAIL
+FILES_TOUCHED:
+DECISION:
+RESULT_SUMMARY:
+RISKS:
+NEXT_STEP:
+
+============================================================
+17. IMPLEMENTATION NOTE TEMPLATE
+============================================================
+
+IMPLEMENTATION_NOTE
+- module:
+- file_path:
+- version:
+- purpose:
+- public_exports:
+- dependencies:
+- acceptance_check:
+- unresolved_points:
+- safe_to_continue: YES / NO
+
+============================================================
+18. FINAL DECISION
+============================================================
+
+A18 is sufficient to begin Python code generation for bootstrap base modules.
+
+This phase is considered SOLID for:
+- bootstrap structure
+- import boundaries
+- init flow
+- config flow
+- logging flow
+- manifest flow
+- startup validation flow
+
+This phase is NOT the place to add:
+- registry loader business logic
+- bridge parsing logic
+- backtest/research logic
+- bot runtime logic
+
+Those must wait until bootstrap code passes acceptance gates.

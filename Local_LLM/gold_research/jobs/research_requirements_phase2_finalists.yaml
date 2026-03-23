@@ -1,0 +1,71 @@
+# version: v1.0.0
+# file: C:\Data\Bot\Local_LLM\gold_research\jobs\research_requirements_phase2_finalists.yaml
+
+project:
+  project_id: gold_research_phase2_finalists_v1
+  project_name: Gold Research Phase 2 Finalists
+  version: v1.0.0
+
+paths:
+  output_root: C:\Data\Bot\cbr\p2f
+  manifest_jsonl: C:\Data\Bot\central_backtest_results\research_jobs\research_job_manifest_phase2_finalists.jsonl
+  manifest_summary_json: C:\Data\Bot\central_backtest_results\research_jobs\research_job_manifest_phase2_finalists_summary.json
+  state_jsonl: C:\Data\Bot\central_backtest_results\research_jobs\job_state_phase2_finalists.jsonl
+
+dataset:
+  symbol: XAUUSD
+  tf_to_ohlc:
+    M2: C:\Data\Bot\central_market_data\tf\XAUUSD_M2.csv
+    M3: C:\Data\Bot\central_market_data\tf\XAUUSD_M3.csv
+    M4: C:\Data\Bot\central_market_data\tf\XAUUSD_M4.csv
+    H1: C:\Data\Bot\central_market_data\tf\XAUUSD_H1.csv
+    D1: C:\Data\Bot\central_market_data\tf\XAUUSD_D1.csv
+
+selection:
+  stage_name: stage_4_phase2_finalists
+  family_id: deep_pullback_continuation
+  entry_style: deep
+  finalists:
+    - timeframe: M4
+      strategy_id: locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+      micro_exit_id: micro_exit_v2_fast_invalidation
+      cooldown_bars: 0
+      regime_filter_id: regime_filter_trend_only
+
+    - timeframe: M3
+      strategy_id: locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+      micro_exit_id: micro_exit_v2_fast_invalidation
+      cooldown_bars: 0
+      regime_filter_id: regime_filter_trend_only
+
+    - timeframe: M2
+      strategy_id: locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+      micro_exit_id: micro_exit_v2_fast_invalidation
+      cooldown_bars: 0
+      regime_filter_id: regime_filter_trend_only
+
+    - timeframe: H1
+      strategy_id: locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+      micro_exit_id: micro_exit_v2_momentum_fade
+      cooldown_bars: 0
+      regime_filter_id: regime_filter_trend_only
+
+    - timeframe: D1
+      strategy_id: locked_ms_bos_choch_pullback_atr_adx_ema_entry_v2_pullback_deep
+      micro_exit_id: micro_exit_v2_momentum_fade
+      cooldown_bars: 3
+      regime_filter_id: regime_filter_trend_or_neutral
+
+  expected_jobs: 5
+
+defaults:
+  risk_model_id: fixed_fractional_1pct
+  execution_model_id: next_bar_market
+  spread_model_id: static_spread_baseline
+  slippage_model_id: static_slippage_baseline
+  train_window_id: insample
+  validation_mode: insample
+  tags:
+    - phase2
+    - finalists
+    - narrowed_universe

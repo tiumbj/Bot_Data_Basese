@@ -1,0 +1,379 @@
+from pathlib import Path
+
+content = """PROJECT LOCKED MASTER
+Project: Local_LLM / gold_research
+File: project_locked.txt
+Version: v1.0.0
+Date: 2026-03-19
+Timezone: Asia/Bangkok
+
+============================================================
+1) PROJECT OBJECTIVE
+============================================================
+Build a production-grade gold research and backtesting framework for XAUUSD/GOLD that is able to:
+- test all required research timeframes in full detail
+- use micro exit as mandatory base layer
+- classify market regimes from real data
+- map regime -> timeframe -> entry -> exit -> TP/SL principle
+- validate results across in-sample, out-of-sample, walk-forward, and regime transitions
+- avoid guessing and use only evidence from exhaustive backtesting
+
+============================================================
+2) LOCKED CORE PRINCIPLES
+============================================================
+2.1 Production-only
+- Production model only
+- No demo framing
+- Production-grade improvements only
+
+2.2 Best-practice only
+- Use only the single best-practice recommendation each time
+- No optional branches
+- No multi-choice suggestions unless strictly necessary
+
+2.3 Evidence-first
+- No guessing
+- No belief-based reasoning
+- All important decisions must be supported by backtest evidence
+- Prefer plateau stability over isolated peak performance
+
+2.4 Full-file code rule
+- When generating code, write the full complete code file
+- Do not write patch-only fragments unless explicitly required
+- No artifact-contaminated patch headers
+- No top-level placeholders/stubs such as:
+  @@ -1,12 +1,1205 @@
+  def _load_him_v3_config(): pass
+  def _run_once_and_print(): pass
+  def loop(): pass
+
+2.5 Explanation/output rule
+Every code delivery must include:
+- Code name
+- File path
+- Run command
+- Version
+- Short step-by-step explanation in Thai
+
+============================================================
+3) LOCKED RESEARCH TIMEFRAMES
+============================================================
+All strategy research and comparison must test these timeframes:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+Rule:
+- Every strategy must be tested across all research timeframes
+- The purpose is to measure clear differences without guesswork
+
+============================================================
+4) MICRO EXIT LOCK
+============================================================
+- Micro exit strategy is mandatory as a base layer
+- It must be backtested on every research timeframe
+- Duration is not a constraint if required for full research
+- Micro exit is considered critical to entry quality and full strategy evaluation
+
+============================================================
+5) MARKET REGIME LOCK
+============================================================
+Do NOT assume one system can cover every market condition.
+
+The project must classify gold market behavior into regimes from real data, such as:
+- ultra narrow range
+- narrow range
+- wide range
+- slow trend
+- strong trend
+- breakout expansion
+- shock / event expansion
+- reversal / choppy unstable
+
+Regime classification must be derived from multi-timeframe features, not guesses.
+
+Core feature groups:
+- range size
+- trend strength
+- volatility state
+- structure quality
+
+Examples of features:
+- rolling high-low range
+- ATR / ATR percentile
+- daily/weekly range
+- ADX
+- EMA slope
+- distance from EMA
+- HH/HL and LH/LL counts
+- BOS/CHOCH frequency
+- breakout follow-through rate
+- false breakout rate
+- wick/body ratio
+- candle overlap ratio
+- pullback depth
+- realized volatility
+- compression -> expansion behavior
+
+============================================================
+6) REGIME-TO-TF ADAPTIVE MODEL LOCK
+============================================================
+The system must NOT use one fixed timeframe for all conditions.
+
+Instead it must research and map:
+- regime -> best timeframe(s)
+- regime -> best entry package
+- regime -> best exit package
+- regime -> TP/SL principle
+- regime -> trade mode (aggressive / selective / no-trade)
+
+Examples of intended logic:
+- 100-200 point market range -> faster TF group
+- 300-400 point market range -> medium TF group
+- 500-600 point market range -> slower TF group
+- 1000-2000 point market range -> higher TF / expansion handling
+
+Important:
+- Final thresholds must come from real data distribution and outcome validation
+- Do not hardcode arbitrary thresholds based on opinion
+
+============================================================
+7) TP/SL RESEARCH LOCK
+============================================================
+The project must find the best principles for TP/SL by:
+- timeframe
+- regime
+- transition regime
+- entry class
+- exit package
+
+Do NOT search only for one fixed TP and SL pair.
+Research must produce TP/SL surfaces and robust plateaus.
+
+Required TP/SL principle families:
+1. Fixed-point principle
+2. ATR-multiple principle
+3. Structure-based principle
+4. R-multiple principle
+5. Dynamic regime-based principle
+
+Examples:
+- fixed TP/SL in points
+- SL = x * ATR, TP = y * ATR
+- SL below invalidation/swing/structure
+- TP at liquidity/swing target
+- partial TP + runner logic
+- trailing / time stop / fade exit / micro exit combinations
+
+Winner selection rule:
+- choose stable plateaus
+- reject narrow overfit peaks
+
+============================================================
+8) BACKTEST VALIDATION LOCK
+============================================================
+All serious research must include:
+- in-sample
+- out-of-sample
+- walk-forward
+- regime-stratified validation
+- transition-regime damage analysis
+
+A result is not valid if it only works on a combined dataset but fails by regime or during regime transitions.
+
+============================================================
+9) REQUIRED EVALUATION METRICS
+============================================================
+At minimum evaluate:
+- net profit
+- profit factor
+- expectancy
+- max drawdown
+- average trade
+- median trade
+- win rate
+- payoff ratio
+- ulcer index
+- time in trade
+- exposure
+- trade density
+- stability across windows
+- out-of-sample robustness
+- transition damage
+- parameter plateau width
+
+Winner rule:
+- positive expectancy
+- acceptable drawdown
+- sufficient trade count
+- robust out-of-sample behavior
+- stable across windows
+- not destroyed during transitions
+- plateau stability preferred over point optimum
+
+============================================================
+10) BEST TOOLCHAIN LOCK
+============================================================
+Locked best-practice research stack for this project:
+
+Data layer:
+- Python
+- Polars
+- Parquet
+
+Simulation layer:
+- Custom Numba-based backtest/simulation engine
+- VectorBT-style research concepts are acceptable as inspiration
+- Research core should remain custom and controllable
+
+Parallel layer:
+- Ray for multi-core / multi-job / multi-machine scaling
+
+Why:
+- Polars + Parquet = fast large-scale data preparation
+- Numba simulation = fast repeated parameter / exit / regime research
+- Ray = scalable exhaustive research across TF x regime x TP/SL surface x walk-forward windows
+
+============================================================
+11) BEST MACHINE LOCK
+============================================================
+11.1 Highest-end workstation target
+- CPU: AMD Threadripper PRO 7995WX
+- RAM: 256GB ECC minimum, 512GB ECC preferred
+- Storage:
+  - OS/Code NVMe
+  - Data NVMe
+  - Results NVMe
+- GPU optional for side research / ML support, not the primary bottleneck
+
+11.2 Strong value workstation target
+- CPU: AMD Ryzen 9 9950X
+- RAM: 128GB
+- NVMe SSD storage
+- Suitable for local single-node exhaustive research before cluster scaling
+
+Machine principle:
+- CPU cores + RAM + NVMe throughput matter more than GPU for this backtest workload
+
+============================================================
+12) REQUIRED RESEARCH ARCHITECTURE
+============================================================
+The project should evolve toward these modules:
+
+1. regime_feature_builder.py
+- build regime features across all TFs
+
+2. regime_labeler.py
+- convert features into regime labels
+
+3. regime_threshold_research.py
+- derive regime boundaries from real distributions
+- use quantile / clustering / outcome validation
+
+4. regime_tf_mapping.py
+- map regime to timeframe / entry / exit / trade mode
+
+5. tp_sl_surface_runner.py
+- run TP/SL surface research by TF and regime
+
+6. walkforward_regime_runner.py
+- perform walk-forward validation stratified by regime
+
+7. transition_damage_analyzer.py
+- analyze losses/failures during regime changes
+
+8. regime_tf_package_registry.py
+- store final winners and mappings
+
+============================================================
+13) DATA / RESULT STORAGE PRINCIPLE
+============================================================
+Preferred folder concepts:
+- data_raw/
+- data_parquet/
+- feature_store/
+- research_runs/
+- surface_results/
+- wf_results/
+- final_registry/
+
+Result storage principle:
+- use structured files that can be re-read and compared
+- prefer Parquet for large analytical outputs
+- keep registries versioned
+
+============================================================
+14) CURRENT KNOWN PROJECT STATUS
+============================================================
+Current direction:
+- Entry research phase is active
+- build_entry_v2_component_packages.py is part of current work
+- weekly_central_backtest_runner.py is used for central batch runs
+- recent issue found: pandas 3.0 incompatible use of fillna(method="ffill"), must replace with .ffill()
+
+Important execution note:
+- If package build fails, central runner may still backtest old packages
+- Therefore build success must be confirmed before trusting new backtest outputs
+
+============================================================
+15) CURRENT EXECUTION RULES
+============================================================
+Before trusting any new result:
+1. Build packages successfully
+2. Confirm output artifacts are new
+3. Run central backtest
+4. Separate results by TF
+5. Separate results by regime
+6. Separate results by walk-forward window
+7. Reject unstable winners
+
+============================================================
+16) RESPONSE STYLE LOCK FOR FUTURE AI CHATS
+============================================================
+Future AI responses for this project should:
+- be direct
+- be practical
+- be step-by-step
+- avoid unnecessary options
+- provide one best path
+- include impact analysis before code or project-affecting advice
+- prioritize the simplest completed form first
+- not rely on memory alone; use this file as reference
+
+============================================================
+17) MASTER DECISION RULE
+============================================================
+For this project, the correct long-term target is NOT:
+- one strategy for all markets
+- one timeframe for all markets
+- one TP/SL pair for all conditions
+
+The correct target IS:
+- regime-adaptive research
+- evidence-based TF mapping
+- evidence-based entry/exit selection
+- evidence-based TP/SL principles
+- robust validation across all market states and transitions
+
+============================================================
+18) NEXT PRACTICAL PRIORITY
+============================================================
+Immediate best-practice direction:
+- fix current build pipeline issues
+- complete entry package generation cleanly
+- begin formal regime feature and TP/SL surface research architecture
+- move from generic central backtest to regime-aware central research
+
+END OF LOCKED MASTER
+"""project_locked.txt")
+path.write_text(content, encoding="utf-8")
+print(f"Saved: {path}")

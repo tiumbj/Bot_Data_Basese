@@ -1,0 +1,798 @@
+# ============================================================
+# ชื่อไฟล์: intelligent_database_platform_master_model.txt
+# ที่อยู่ไฟล์: C:\Data\Bot\Local_LLM\gold_research\docs\intelligent_database_platform_master_model.txt
+# คำสั่งใช้งาน: ใช้เป็น master text สำหรับคุมโครงการและอัปเดตผลหลังจบแต่ละ phase
+# เวอร์ชัน: v1.2.0
+# ============================================================
+
+INTELLIGENT DATABASE PLATFORM + BOT RUNTIME PLATFORM
+MASTER PROJECT MODEL
+Version: v1.2.0
+Date: 2026-03-20
+Status: ACTIVE FOUNDATION LOCK
+
+============================================================
+0) PURPOSE
+============================================================
+
+เอกสารนี้ใช้เป็น master text กลางของโปรเจกต์ โดยแยกโปรเจกต์ออกเป็น 2 ส่วนชัดเจน
+
+A. Intelligent Database Platform
+B. Bot Runtime Platform
+
+เป้าหมาย:
+- ให้ระบบฐานข้อมูล/backtest เป็น standalone platform ที่ฉลาดขึ้นทุกสัปดาห์
+- ให้ bot ทุกตัวดึง intelligence, labels, strategy registry, และ historical cases จาก platform กลาง
+- ห้าม bot แต่ละตัวสร้าง historical memory / labels / backtest registry ของตัวเองซ้ำ
+- ให้ผลวิจัย, labels, และ strategy packages กลายเป็นทรัพย์สินกลางของระบบ
+
+============================================================
+1) LOCKED FOUNDATIONS
+============================================================
+
+1.1 Architecture lock
+- ต้องแยกฐานข้อมูล/backtest ออกจาก bot runtime
+- Database Platform เป็นสินทรัพย์กลาง
+- Bot Runtime เป็น client ของ platform กลาง
+
+1.2 Data stack lock
+- Python = orchestration layer
+- Polars = data processing layer
+- Parquet = primary storage format
+- DuckDB = analytical query engine / metadata registry / SQL analytics
+- Qdrant = similar-case retrieval layer
+- Custom Numba-based backtest engine = research core
+- Ray = parallel scaling layer
+
+1.3 Research lock
+- ต้องทดสอบทุก single timeframe แบบบังคับ:
+  M1, M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1
+- micro exit เป็น base layer บังคับทุก timeframe
+- ต้องมี in-sample / out-of-sample / walk-forward / regime-stratified validation
+- ห้ามเลือกผู้ชนะจาก point optimum แคบ
+- ต้องเลือก plateau stability ที่ robust
+
+1.4 Label lock
+- Triple-Barrier
+- Meta-Labeling
+- custom exit/failure labels
+- transition/regime damage labels
+- execution quality labels
+
+1.5 Bot integration lock
+- Local LLM ต้องไม่รับ historical raw data ทั้งหมดตรง ๆ
+- ต้อง query similar historical cases จาก Qdrant ก่อน
+- Python engine ต้องเป็น final hard-risk / execution correction layer
+- MT5 execution แยกจาก reasoning layer
+
+============================================================
+2) SYSTEM SPLIT
+============================================================
+
+2.1 Intelligent Database Platform
+หน้าที่:
+- ingest MT5 market data
+- build canonical datasets
+- build feature store
+- run backtests
+- generate labels
+- generate case memory
+- maintain retrieval index
+- maintain strategy registry
+- maintain weekly intelligence snapshots
+- publish data service/API to bots
+- store real trade outcomes returned from bots
+- compare live outcomes vs research expectation
+- learn from results incrementally
+
+2.2 Bot Runtime Platform
+หน้าที่:
+- receive realtime market feed
+- build live multi-TF snapshot
+- ask platform for:
+  - current regime summary
+  - approved strategy packages
+  - approved micro exit package
+  - similar historical cases
+  - risk warnings
+- send context to local LLM
+- receive final confirm
+- correct execution terms
+- send order to MT5
+- monitor order by ticket id
+- trigger micro exit / protective logic
+- send final trade outcome back to platform
+
+============================================================
+3) STANDALONE DATABASE PLATFORM DESIGN
+============================================================
+
+3.1 Core design principle
+Database Platform ต้อง run ได้เองโดยไม่ขึ้นกับ bot ตัวใดตัวหนึ่ง
+Bot จะ online/offline ก็ได้ แต่ data platform ต้องทำงานต่อได้
+
+3.2 Core modes
+- bootstrap mode
+- weekly intelligence mode
+- daily incremental mode
+- full rebuild mode
+- validation mode
+- publish mode
+
+3.3 Core outputs
+- canonical bars
+- feature tables
+- label tables
+- backtest trades
+- walk-forward results
+- TP/SL surfaces
+- regime mappings
+- package registry
+- similar-case memory
+- weekly intelligence report
+- progression checklist update
+- strategy/logic update text
+
+============================================================
+4) STORAGE ARCHITECTURE
+============================================================
+
+4.1 Primary storage
+Parquet เป็น storage หลัก เพราะ:
+- columnar
+- compressed
+- scan/filter/read เร็ว
+- เหมาะกับ analytical workload
+- ใช้ร่วมกับ Polars และ DuckDB ดีมาก
+
+4.2 Analytical database
+DuckDB ใช้สำหรับ:
+- query ข้าม TF
+- query ข้าม strategy package
+- query ข้าม regime
+- compare runs
+- maintain registries
+- create SQL views ให้ bot เรียกง่าย
+
+4.3 Vector retrieval database
+Qdrant ใช้เฉพาะ similarity layer:
+- similar historical cases
+- filter ตาม symbol / TF stack / regime / session / direction
+- ส่ง top-k cases ให้ local LLM
+- ห้ามใช้เป็น main analytical DB
+
+============================================================
+5) FOLDER DESIGN
+============================================================
+
+Root proposal:
+C:\Data\Bot\Local_LLM\gold_research\
+
+Recommended structure:
+- data_raw\
+- data_parquet\
+- feature_store\
+- label_store\
+- case_memory\
+- retrieval_index\
+- research_runs\
+- wf_results\
+- surface_results\
+- package_registry\
+- live_feedback\
+- weekly_reports\
+- docs\
+- jobs\
+- services\
+- logs\
+
+Detailed purpose:
+
+data_raw\
+- raw MT5 extracted bars
+- original source snapshots
+- immutable archives when possible
+
+data_parquet\
+- canonical bar tables
+- partitioned by symbol / timeframe / year / month
+
+feature_store\
+- processed features by symbol / timeframe / partition
+- regime features
+- structure features
+- volatility features
+- session features
+
+label_store\
+- triple barrier labels
+- meta labels
+- custom failure labels
+- exit behavior labels
+- regime transition labels
+
+case_memory\
+- one row per case snapshot
+- features + labels + result + short summary + metadata
+
+retrieval_index\
+- embeddings payload and retrieval metadata
+- Qdrant collection definitions
+
+research_runs\
+- raw backtest experiment results
+- parameter combinations
+- trade-by-trade result sets
+
+wf_results\
+- walk-forward validation outputs
+- OOS scores
+- stability tables
+
+surface_results\
+- TP/SL surfaces
+- sensitivity maps
+- plateau analysis
+
+package_registry\
+- final approved packages
+- entry package registry
+- exit package registry
+- regime mapping registry
+- micro exit registry
+
+live_feedback\
+- actual live trades from bots
+- execution quality
+- slippage
+- deviation from research expectation
+
+weekly_reports\
+- intelligence snapshots
+- comparison reports
+- progression checklist updates
+- weekly decision notes
+
+docs\
+- master model
+- lock documents
+- phase checklists
+- step result notes
+
+============================================================
+6) DATABASE TABLE / ENTITY DESIGN
+============================================================
+
+6.1 Canonical bars
+Fields:
+- symbol
+- timeframe
+- ts_utc
+- open
+- high
+- low
+- close
+- tick_volume
+- spread
+- source_hash
+- ingest_batch_id
+
+6.2 Feature table
+Fields:
+- symbol
+- timeframe
+- ts_utc
+- atr
+- atr_percentile
+- adx
+- ema_20
+- ema_50
+- ema_slope
+- distance_from_ema
+- rolling_range
+- wick_body_ratio
+- candle_overlap_ratio
+- pullback_depth
+- bos_count
+- choch_count
+- hh_hl_count
+- lh_ll_count
+- session_tag
+- regime_feature_set_id
+
+6.3 Label table
+Fields:
+- symbol
+- timeframe
+- ts_utc
+- triple_barrier_label
+- meta_label
+- exit_failure_label
+- transition_damage_label
+- execution_quality_label
+- label_version
+
+6.4 Backtest trade table
+Fields:
+- run_id
+- package_id
+- symbol
+- timeframe
+- trade_id
+- direction
+- entry_ts
+- exit_ts
+- entry_price
+- exit_price
+- sl
+- tp
+- rr
+- pnl_points
+- pnl_r
+- mae
+- mfe
+- holding_seconds
+- exit_reason
+- regime_tag
+- session_tag
+- oos_flag
+
+6.5 Case memory table
+Fields:
+- case_id
+- package_id
+- symbol
+- tf_stack
+- ts_utc
+- direction
+- regime_tag
+- session_tag
+- snapshot_summary
+- feature_vector_ref
+- label_summary
+- outcome_summary
+- failure_flags
+- embedding_id
+
+6.6 Strategy package registry
+Fields:
+- package_id
+- package_type
+- entry_logic_name
+- exit_logic_name
+- micro_exit_name
+- timeframe
+- regime_tag
+- version
+- validation_status
+- selected_metrics_json
+- plateau_score
+- wf_score
+- active_flag
+
+6.7 Live trade feedback table
+Fields:
+- live_trade_id
+- order_ticket
+- bot_id
+- package_id
+- symbol
+- timeframe
+- direction
+- entry_ts
+- exit_ts
+- entry_price
+- exit_price
+- sl
+- tp
+- rr
+- pnl_points
+- exit_reason
+- llm_confidence
+- market_regime
+- trend_state
+- threshold_snapshot
+- swing_period
+- spread_at_entry
+- slippage_points
+- execution_comment
+
+============================================================
+7) WEEKLY INTELLIGENCE RUN DESIGN
+============================================================
+
+เมื่อกด run ประจำสัปดาห์ ระบบต้องทำตามลำดับนี้:
+
+Step 1: Ingest new MT5 data
+- ดึง bars ใหม่จาก MT5
+- check source hash
+- check timestamp continuity
+- reject duplicates
+- log ingest batch
+
+Step 2: Normalize to canonical dataset
+- map symbol
+- align timezone
+- validate OHLC integrity
+- write canonical parquet partitions
+
+Step 3: Rebuild affected timeframes
+- build only impacted partitions by default
+- full rebuild only when source corruption or rule change exists
+
+Step 4: Update feature store
+- recalc affected features
+- maintain version tag
+
+Step 5: Run backtest batch
+- run approved research jobs
+- run pending package jobs
+- run micro exit base jobs across all TF
+
+Step 6: Run validation batch
+- IS / OOS / walk-forward
+- regime-stratified validation
+- transition damage analysis
+
+Step 7: Update labels
+- triple-barrier
+- meta-label
+- custom failure / exit labels
+- execution quality labels
+
+Step 8: Update case memory
+- create new cases
+- refresh summaries if label version changed
+
+Step 9: Update retrieval index
+- generate embeddings
+- upsert to Qdrant
+- remove stale/replaced cases if needed
+
+Step 10: Update package registry
+- promote winners
+- demote damaged packages
+- keep full history
+
+Step 11: Compare live trades vs research expectation
+- compare slippage
+- compare regime mismatch
+- compare live loss clusters
+- identify drift
+
+Step 12: Publish intelligence outputs
+- weekly report
+- active package registry
+- regime mapping summary
+- micro exit recommendation set
+- bot service views
+
+Step 13: Update project texts
+- progression checklist
+- step result note
+- strategy/logic use note
+
+============================================================
+8) DUPLICATE PREVENTION DESIGN
+============================================================
+
+8.1 Data duplicate prevention
+ใช้ composite key:
+- symbol
+- timeframe
+- ts_utc
+
+8.2 Ingest batch control
+ใช้:
+- ingest_batch_id
+- source_hash
+- file_hash
+- row_count
+- min_ts
+- max_ts
+
+8.3 Label duplicate prevention
+- label_version
+- feature_version
+- strategy_version
+- only upsert when source changes
+
+8.4 Case duplicate prevention
+- case_id = hash(symbol + tf_stack + ts_utc + package_id + direction + label_version)
+
+8.5 Live trade duplicate prevention
+- unique(order_ticket)
+- if partial close exists use ticket + child_event_sequence
+
+============================================================
+9) STRATEGY / LOGIC RESEARCH PRINCIPLE
+============================================================
+
+9.1 Entry logic families
+- market structure pullback
+- breakout continuation
+- mean reversion rejection
+- session expansion / compression
+- volatility contraction -> expansion
+- EMA location/slope filters
+- ADX strength filters
+- swing invalidation logic
+- liquidity sweep / reclaim style logic
+
+9.2 Exit logic families
+- fixed TP/SL
+- ATR multiple
+- structure target
+- time stop
+- momentum fade
+- micro exit fast invalidation
+- partial + runner
+- trailing after confirmation
+- regime-aware dynamic exit
+
+9.3 Micro exit base layer
+ต้องถูกทดสอบทุก timeframe แบบบังคับ
+อย่างน้อย:
+- fast invalidation
+- momentum fade
+- failed follow-through
+- structure break against trade
+- spread/slippage abnormal protection (when relevant)
+
+9.4 Research rule
+ทุก strategy family ต้องใช้หลักการทดสอบเดียวกัน:
+- same dataset discipline
+- same validation protocol
+- same metrics
+- same OOS rules
+- same plateau selection rule
+
+============================================================
+10) TIMEFRAME RESEARCH LOCK
+============================================================
+
+Mandatory research timeframes:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+Rule:
+- ห้ามข้าม single timeframe ใด
+- ต้องมีผลแยกต่อ timeframe
+- ต้องมี winner/loser summary ต่อ timeframe
+- ต้องมี micro exit result ต่อ timeframe
+- ต้องมี regime-to-timeframe mapping จากข้อมูลจริง ไม่เดา
+
+============================================================
+11) SERVICE LAYER FOR OTHER BOTS
+============================================================
+
+Database Platform ต้องเปิดบริการข้อมูลให้ bot อื่นในอนาคต เช่น:
+
+11.1 Query types
+- latest regime summary
+- active approved package by timeframe
+- active approved micro exit by timeframe
+- top similar cases for snapshot
+- live risk warnings
+- drift warnings
+- expected TP/SL principle by regime
+- failure cluster summary
+
+11.2 Suggested service endpoints (concept)
+- get_regime_snapshot(symbol)
+- get_active_packages(symbol, timeframe, regime)
+- get_similar_cases(snapshot_payload, top_k)
+- get_micro_exit_policy(symbol, timeframe, regime)
+- push_live_trade_feedback(payload)
+- get_weekly_intelligence(symbol)
+
+============================================================
+12) BOT DESIGN USING THE PLATFORM
+============================================================
+
+Bot flow:
+
+1. Bot gets realtime market data
+2. Python engine builds live snapshot
+3. Python asks platform for approved package + similar cases + regime summary
+4. Local LLM receives:
+   - live snapshot
+   - approved package candidates
+   - top similar labeled cases
+   - current warnings
+5. Local LLM returns analysis / confirm / reject
+6. Python corrects entry, TP, SL, RR, lot, execution safety
+7. MT5 sends order
+8. Python stores live order data to central platform
+9. Python monitors order by order ticket
+10. micro exit checks every fast loop interval
+11. Python stores exit reason and outcome
+12. next weekly run consumes these outcomes into intelligence layer
+
+============================================================
+13) WHAT THE PLATFORM MUST STORE FOR EACH LIVE ORDER
+============================================================
+
+Mandatory fields:
+- order_ticket
+- bot_id
+- symbol
+- timeframe
+- direction
+- entry_price
+- sl
+- tp
+- rr
+- lot
+- order_ts
+- local_llm_reason
+- local_llm_confidence
+- package_id
+- market_regime
+- trend_up_down
+- threshold_snapshot
+- swing_point_period
+- session_tag
+- spread
+- slippage
+- final_exit_reason
+- exit_price
+- exit_ts
+- realized_pnl_points
+- realized_pnl_r
+
+============================================================
+14) PHASE PLAN
+============================================================
+
+PHASE A = Intelligent Database Platform
+PHASE B = Bot Runtime Platform
+PHASE C = Cross-system feedback learning
+
+Phase A1
+- lock folder structure
+- lock registries
+- lock storage schema
+- lock weekly run sequence
+- create master txt documents
+
+Phase A2
+- build canonical ingest pipeline
+- add duplicate prevention
+- produce parquet partitions
+
+Phase A3
+- build feature store
+- build label store
+- version features and labels
+
+Phase A4
+- build custom backtest core
+- run base entry + micro exit research all TF
+
+Phase A5
+- build case memory + embeddings + Qdrant retrieval
+
+Phase A6
+- build weekly central intelligence runner
+- publish weekly reports and active registries
+
+Phase B1
+- bot consumes active packages and similar cases
+
+Phase B2
+- local LLM final confirm integration
+
+Phase B3
+- execution correction + MT5 integration + monitoring + feedback
+
+Phase C1
+- compare live vs research
+- adapt winners / demotions / warnings
+
+============================================================
+15) PROGRESSION CHECKLIST
+============================================================
+
+[LOCKED] Split project into Intelligent Database Platform and Bot Runtime Platform
+[LOCKED] Standalone central database/backtest platform concept
+[LOCKED] Data stack: Python + Polars + Parquet + DuckDB + Qdrant
+[LOCKED] Research core: custom Numba-based simulation engine
+[LOCKED] Parallel layer: Ray
+[LOCKED] Mandatory TF list
+[LOCKED] Micro exit as mandatory base layer
+[LOCKED] Weekly intelligence run concept
+[LOCKED] Central registry concept
+[ACTIVE] Current entry research phase
+[ACTIVE] build_entry_v2_component_packages.py
+[PENDING] Canonical ingest pipeline
+[PENDING] Feature store
+[PENDING] Label store
+[PENDING] Case memory
+[PENDING] Retrieval service
+[PENDING] Weekly central runner publish layer
+[PENDING] Bot service integration
+
+============================================================
+16) STEP UPDATE TEMPLATE
+============================================================
+
+STEP UPDATE
+Version:
+Date:
+Phase:
+Step:
+Status: PASS / FAIL / PARTIAL
+
+Objective:
+Input:
+Output:
+Files created:
+Files updated:
+Command used:
+Result summary:
+Metrics summary:
+Problems found:
+Root cause:
+Decision:
+Next step:
+
+============================================================
+17) STRATEGY / LOGIC USE TEMPLATE
+============================================================
+
+STRATEGY / LOGIC RECORD
+Version:
+Date:
+Research family:
+Entry logic:
+Exit logic:
+Micro exit:
+Timeframe:
+Regime target:
+Dataset window:
+Validation method:
+Parameters:
+Main metrics:
+OOS metrics:
+Walk-forward notes:
+Transition damage notes:
+Plateau notes:
+Decision:
+Registry action:
+Comments:
+
+============================================================
+18) CURRENT EXECUTION NOTE
+============================================================
+
+Current active work mentioned by user:
+python C:\Data\Bot\Local_LLM\gold_research\jobs\build_entry_v2_component_packages.py
+
+Instruction while waiting:
+- Continue architecture / registry / platform documentation work
+- Do not block on package build completion
+- Keep platform design independent from a single package build result
+- When package build finishes, record result into progression checklist and strategy/logic record
+
+============================================================
+19) FINAL LOCK SENTENCE
+============================================================
+
+จากจุดนี้ไป:
+Intelligent Database Platform ต้องเป็นระบบ standalone ที่ฉลาดขึ้นทุกสัปดาห์,
+เก็บข้อมูลกลางครบ,
+ป้องกันข้อมูลซ้ำ,
+สร้าง labels และ memory ได้เอง,
+และพร้อมให้ bot อื่นเข้ามาใช้ข้อมูลได้ตลอดเวลา
+โดยที่ bot ไม่ต้องย้อนกลับมาสร้างระบบ backtest intelligence ของตัวเองอีก

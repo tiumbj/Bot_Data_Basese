@@ -1,0 +1,804 @@
+================================================================================
+ชื่อเอกสาร: Intelligent Database Platform Phase A3 Technical Spec
+ที่อยู่ไฟล์: /mnt/data/intelligent_database_platform_phase_a3_technical_spec_v1_4_0.txt
+เวอร์ชัน: v1.4.0
+================================================================================
+
+PURPOSE
+- Define the production-grade technical specification for the standalone Intelligent
+  Database Platform.
+- This platform must serve multiple future bots with flexible access patterns.
+- The platform must ingest, clean, deduplicate, resample, backtest, label, evaluate,
+  index, publish, and serve intelligence as a central service.
+- Bot Runtime Platform must consume this platform instead of rebuilding the same logic.
+
+LOCKED PRINCIPLES
+1. Database/Backtest is a standalone platform, not a bot-local utility.
+2. Historical backtest outputs, labels, and case memory are central assets.
+3. Every research strategy must be tested across all required timeframes:
+   M1, M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1.
+4. Micro exit is mandatory as the base exit layer across every research timeframe.
+5. Canonical source must be deterministic and deduplicated before any resampling.
+6. Weekly intelligence refresh must be incremental by default and full rerun only when
+   strategy logic or label logic changes materially.
+7. Platform access must be flexible enough for multiple bot types in the future:
+   signal bots, LLM confirm bots, monitor bots, portfolio bots, analytics bots,
+   dashboard bots, and audit bots.
+
+================================================================================
+1) TARGET ARCHITECTURE
+================================================================================
+
+1.1 Platform split
+A. Intelligent Database Platform
+   - data ingest
+   - canonical dataset creation
+   - duplicate prevention
+   - feature store
+   - backtest engine
+   - validation engine
+   - label engine
+   - retrieval memory engine
+   - strategy package registry
+   - intelligence publishing
+   - service interfaces
+
+B. Bot Runtime Platform
+   - real-time data pull
+   - candidate setup generation
+   - service request to database platform
+   - local LLM reasoning
+   - execution confirmation
+   - MT5 order routing
+   - order monitoring
+   - feedback write-back to database platform
+
+1.2 Design objective
+The database platform must become smarter every week.
+Bots must become lighter over time because they consume higher-quality intelligence
+from the central platform.
+
+1.3 Core service model
+The platform exposes:
+- latest regime intelligence
+- approved packages by timeframe
+- approved micro exits by timeframe
+- top-k similar historical cases
+- live risk context
+- recent failure patterns
+- TP/SL surface recommendation
+- execution constraints
+- weekly intelligence snapshot
+- audit-ready research evidence
+
+================================================================================
+2) MODERN TOOLCHAIN LOCK
+================================================================================
+
+2.1 Core stack
+- Python = orchestration and system glue
+- Polars = high-speed data processing
+- Parquet = canonical storage and analytical persistence
+- DuckDB = metadata and analytical query layer
+- Qdrant = similarity retrieval and case memory index
+- Custom Numba-based simulation engine = research and backtest core
+- Ray = parallel scaling for TF x strategy x regime x walk-forward jobs
+
+2.2 Why this stack
+- Fast batch research
+- Good local-machine performance
+- Strong repeatability
+- Easy versioned outputs
+- Clean separation between tabular analytics and vector retrieval
+- Flexible enough for future multi-bot ecosystem
+
+2.3 Service access layer
+Use two service styles:
+- Internal Python SDK for local bots on the same machine
+- HTTP API for remote or decoupled bots
+
+Reason:
+- SDK is fastest for same-host consumers.
+- HTTP is more flexible for future distributed systems.
+- Both must read from the same registry and response schema.
+
+================================================================================
+3) STORAGE LAYERS
+================================================================================
+
+3.1 Layer A: Raw landing
+Purpose:
+- preserve original MT5 or file-extracted bars
+- never mutate original raw payload
+
+Folder concept:
+- data_raw/mt5_pull/
+- data_raw/imported_zip/
+- data_raw/import_manifest/
+
+Storage:
+- Parquet or CSV only as immutable landing snapshots
+- each batch stamped with source_id and ingest_ts
+
+3.2 Layer B: Canonical market data
+Purpose:
+- hold deduplicated, validated, deterministic OHLCV
+
+Folder concept:
+- data_parquet/canonical_ohlcv/symbol=GOLD/timeframe=M1/
+- data_parquet/canonical_ohlcv/symbol=GOLD/timeframe=M2/
+- ...
+- data_parquet/canonical_ohlcv/symbol=GOLD/timeframe=D1/
+
+Rule:
+- M1 is the canonical base
+- higher TFs are derived deterministically from M1
+- no bot may build its own private timeframe data
+
+3.3 Layer C: Feature store
+Purpose:
+- persist reusable indicators, price action states, regime features, and trade context
+
+Folder concept:
+- feature_store/market_structure/
+- feature_store/indicator_stack/
+- feature_store/regime_features/
+- feature_store/entry_context/
+- feature_store/exit_context/
+
+3.4 Layer D: Research results
+Purpose:
+- persist simulation outputs and evaluations
+
+Folder concept:
+- research_runs/
+- surface_results/
+- wf_results/
+- transition_results/
+- package_registry/
+
+3.5 Layer E: Memory and retrieval
+Purpose:
+- store labeled historical cases and similarity vectors
+
+Folder concept:
+- memory_cases/
+- vector_index_exports/
+- qdrant_snapshots/
+
+3.6 Layer F: Live feedback
+Purpose:
+- store actual bot execution outcomes and compare with research expectations
+
+Folder concept:
+- live_trade_logs/
+- execution_feedback/
+- live_vs_research/
+- exit_monitor_feedback/
+
+================================================================================
+4) CANONICAL INGEST TECHNICAL SPEC
+================================================================================
+
+4.1 Canonical ingest objective
+Convert all incoming market data into one trusted deterministic source.
+
+4.2 Canonical M1 schema
+Required fields:
+- symbol: string
+- broker_symbol: string
+- source_type: string
+- source_batch_id: string
+- datetime_utc: timestamp
+- open: float64
+- high: float64
+- low: float64
+- close: float64
+- volume: float64
+- spread_points: float64 nullable
+- tick_volume: float64 nullable
+- ingest_ts_utc: timestamp
+- data_hash: string
+- row_status: string
+- anomaly_flags: list/string
+
+4.3 Canonical rules
+- datetime must be UTC
+- symbol must map to canonical symbol name (ex: GOLD)
+- duplicate timestamps are not allowed after canonicalization
+- open/high/low/close must be numeric and non-null
+- high >= max(open, close, low)
+- low <= min(open, close, high)
+- rows must be sorted ascending by datetime_utc
+- row_status must be ACTIVE, REJECTED, or QUARANTINED
+
+4.4 Duplicate prevention standard
+Use six layers:
+
+Layer 1: raw batch fingerprint
+- hash raw file payload or MT5 pull manifest
+- prevent repeated import of same batch
+
+Layer 2: row hash
+- hash(symbol, datetime_utc, open, high, low, close, volume)
+- detect exact duplicate rows
+
+Layer 3: timestamp uniqueness
+- only one ACTIVE row per symbol + timeframe + datetime_utc in canonical storage
+
+Layer 4: conflict resolver
+If same timestamp but different OHLC values:
+- quarantine incoming row
+- compare source_priority
+- compare ingest recency
+- compare external audit notes
+- do not overwrite automatically unless replacement policy is triggered
+
+Layer 5: continuity validator
+- detect missing bars
+- detect out-of-order rows
+- detect abnormal gaps beyond expected market closure pattern
+
+Layer 6: resample consistency validator
+- verify derived TF bars exactly match canonical M1 aggregation
+
+4.5 Recommended hash standard
+- use SHA-256 for file/batch fingerprints
+- use xxhash64 or blake3 for high-speed row hashing if speed is critical
+- persist both logical primary key and row hash
+
+4.6 Upsert policy
+For canonical ACTIVE layer:
+Primary logical key:
+- symbol
+- timeframe
+- datetime_utc
+
+Upsert rules:
+- if new key: insert ACTIVE row
+- if same key and exact same row hash: ignore
+- if same key and different row hash: quarantine conflict and write to conflict log
+- if manual or audited override approved: mark prior row as SUPERSEDED and promote new row
+
+4.7 Quarantine policy
+Conflict rows go to:
+- data_quarantine/ohlcv_conflicts/
+with:
+- old_row_hash
+- new_row_hash
+- conflict_type
+- source_priority
+- review_status
+- reviewer_note
+- resolution_ts
+
+================================================================================
+5) TIMEFRAME BUILD SPEC
+================================================================================
+
+5.1 Mandatory research timeframes
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+5.2 Build rule
+- Only M1 can be directly imported as canonical research source
+- All other TFs must be derived from M1 by deterministic aggregation
+
+5.3 Aggregation rule
+Per TF candle:
+- open = first open
+- high = max high
+- low = min low
+- close = last close
+- volume = sum volume
+
+5.4 Rebuild policy
+Incremental rebuild:
+- rebuild only impacted windows after new M1 data arrives
+
+Full rebuild:
+- only when resample logic, timezone logic, or canonical conflict resolution changes
+
+5.5 Continuity algorithm
+For each symbol/timeframe:
+- sort ascending
+- compute expected delta by timeframe
+- compare actual delta
+- classify:
+  - OK
+  - EXPECTED_MARKET_CLOSED
+  - MISSING_BAR
+  - OVERLAP
+  - OUT_OF_ORDER
+- write continuity report to DuckDB and parquet artifact
+
+================================================================================
+6) FEATURE STORE SPEC
+================================================================================
+
+6.1 Feature families
+- market structure
+- swing points
+- BOS / CHOCH markers
+- ATR / ADX / EMA stack
+- Bollinger / volatility state
+- session context
+- spread / liquidity context
+- regime state
+- entry trigger stack
+- exit trigger stack
+- micro exit state
+
+6.2 Feature storage principle
+- features must be recomputable from canonical data
+- every feature set has:
+  - feature_set_id
+  - version
+  - input_data_version
+  - generation_ts
+  - symbol
+  - timeframe
+
+6.3 Feature versioning
+Any change in logic must produce a new version.
+No silent overwrite of feature logic.
+
+================================================================================
+7) BACKTEST ENGINE SPEC
+================================================================================
+
+7.1 Engine objective
+Run exhaustive and reproducible research across:
+- timeframe
+- entry logic
+- exit logic
+- market regime
+- walk-forward windows
+- TP/SL surfaces
+- micro exit variants
+
+7.2 Strategy family coverage
+At minimum cover:
+- market structure continuation
+- BOS/CHOCH pullback
+- trend pullback
+- deep pullback
+- swing confirmation
+- momentum continuation
+- reversal / exhaustion filters
+- volatility compression / expansion
+- session-aware variants
+
+7.3 Exit family coverage
+At minimum cover:
+- base exit
+- micro exit
+- fast invalidation
+- momentum fade
+- time stop
+- EMA weakness
+- structure break exit
+- volatility shock exit
+
+7.4 Mandatory rule
+Micro exit is always tested as a base layer on every timeframe.
+
+7.5 Evaluation outputs
+Every run must produce:
+- trade logs
+- MAE/MFE
+- regime bucket results
+- session bucket results
+- drawdown statistics
+- transition damage
+- out-of-sample metrics
+- stability across windows
+- plateau width / parameter fragility
+
+================================================================================
+8) LABEL ENGINE SPEC
+================================================================================
+
+8.1 Label purpose
+Convert research and live outcomes into reusable intelligence for bots and LLM.
+
+8.2 Label families
+- entry quality label
+- exit quality label
+- regime success label
+- TP hit profile
+- SL failure profile
+- MAE/MFE efficiency label
+- execution risk label
+- transition damage label
+- false breakout label
+- micro exit rescue label
+
+8.3 Recommended label style
+Use layered labeling:
+- primary outcome labels
+- triple-barrier style path labels
+- meta-label for setup quality
+- execution quality label
+- live-vs-research deviation label
+
+8.4 Label versioning
+Each label family has:
+- label_family
+- label_version
+- feature_version_dependency
+- backtest_version_dependency
+- effective_start_ts
+
+================================================================================
+9) MEMORY / RETRIEVAL SPEC
+================================================================================
+
+9.1 Objective
+Provide top-k similar historical cases to bots and local LLM.
+
+9.2 Why separate Qdrant from DuckDB
+- DuckDB is best for analytical tables
+- Qdrant is best for similarity search with metadata filters
+
+9.3 Case memory unit
+Each case should include:
+- case_id
+- symbol
+- timeframe
+- timestamp
+- regime label
+- feature snapshot
+- strategy package id
+- entry side
+- entry context summary
+- exit outcome summary
+- MAE/MFE summary
+- confidence label
+- failure flags
+- embedding vector
+- metadata filters
+
+9.4 Retrieval query modes
+- by current timeframe only
+- by regime + timeframe
+- by session + trend direction
+- by package id
+- by failure pattern
+- by live trade monitoring state
+
+9.5 Top-k service rule
+Default:
+- fetch top 20 similar cases
+- enforce metadata filters before similarity ranking when possible
+- do not dump raw history into LLM
+- send compressed evidence summary + selected representative cases
+
+================================================================================
+10) CENTRAL REGISTRY SPEC
+================================================================================
+
+10.1 Registry groups
+1. data_registry
+2. feature_registry
+3. strategy_registry
+4. exit_registry
+5. label_registry
+6. package_registry
+7. memory_registry
+8. intelligence_registry
+
+10.2 Package registry minimum fields
+- package_id
+- strategy_family
+- strategy_variant
+- timeframe
+- regime
+- exit_variant
+- label_version
+- train_window
+- validation_window
+- oos_window
+- winner_metrics
+- rejection_reasons
+- promotion_status
+- published_ts
+
+10.3 Promotion states
+- CANDIDATE
+- VALIDATED
+- SHADOW_READY
+- LIVE_ASSIST_READY
+- RETIRED
+
+================================================================================
+11) WEEKLY INTELLIGENCE RUN SPEC
+================================================================================
+
+Weekly run flow:
+
+Step 1: pull new data from MT5
+Step 2: fingerprint and validate raw batch
+Step 3: canonicalize M1
+Step 4: run duplicate and continuity checks
+Step 5: rebuild impacted TF windows
+Step 6: refresh feature store
+Step 7: run backtest batches
+Step 8: run walk-forward / validation batches
+Step 9: refresh labels
+Step 10: refresh memory cases
+Step 11: refresh Qdrant index
+Step 12: compare live results vs research expectations
+Step 13: publish approved package updates
+Step 14: publish weekly intelligence snapshot
+Step 15: write progression update text
+Step 16: archive manifests, logs, and run metadata
+
+Default mode:
+- incremental weekly run
+
+Full research rerun triggers:
+- entry logic changed
+- exit logic changed
+- feature logic changed
+- label logic changed
+- timeframe build logic changed
+- severe regime drift detected
+- canonical conflict resolution changed
+
+================================================================================
+12) BOT ACCESS MODEL
+================================================================================
+
+12.1 Access principle
+Bots are consumers of intelligence, not owners of private research truth.
+
+12.2 Access styles
+A. Python SDK
+Use for:
+- same machine
+- lowest latency
+- local bot cluster
+
+B. HTTP API
+Use for:
+- remote bots
+- multi-language integration
+- future decoupled deployment
+
+12.3 Minimum service endpoints / methods
+- get_latest_regime(symbol, timeframe)
+- get_approved_package(symbol, timeframe, regime)
+- get_micro_exit_policy(symbol, timeframe, regime)
+- get_tp_sl_surface(symbol, timeframe, regime, side)
+- get_similar_cases(symbol, timeframe, current_snapshot)
+- get_failure_warnings(symbol, timeframe, regime)
+- get_execution_constraints(symbol, broker_symbol)
+- write_live_trade_feedback(payload)
+- write_exit_feedback(payload)
+- get_weekly_intelligence_snapshot(symbol)
+- get_registry_status()
+
+12.4 Flexible future support
+This design supports:
+- signal bot
+- LLM confirm bot
+- execution bot
+- monitor bot
+- dashboard bot
+- analytics bot
+- portfolio allocator bot
+- risk governor bot
+
+================================================================================
+13) LIVE FEEDBACK WRITE-BACK SPEC
+================================================================================
+
+13.1 Why write-back matters
+Without live write-back, research cannot learn from real execution friction.
+
+13.2 Required feedback fields
+- trade_id
+- order_ticket
+- broker
+- broker_symbol
+- canonical_symbol
+- strategy_package_id
+- entry_time_utc
+- entry_price
+- side
+- sl
+- tp
+- rr
+- regime_label_at_entry
+- trend_direction
+- session_label
+- spread_points
+- slippage_points
+- llm_decision
+- llm_confidence
+- execution_constraints_used
+- micro_exit_triggered
+- micro_exit_reason
+- exit_time_utc
+- exit_price
+- exit_reason
+- pnl_money
+- pnl_r
+- live_monitor_anomalies
+- notes
+
+13.3 Monitoring rule
+Use order ticket as the primary monitoring anchor to avoid missing live trade tracking.
+
+================================================================================
+14) ROBUSTNESS AND RELIABILITY SPEC
+================================================================================
+
+14.1 Reliability rules
+- immutable raw layer
+- deterministic canonical layer
+- quarantine on conflict
+- explicit versioning
+- reproducible backtest runs
+- registry-driven package promotion
+- separation of analytics tables and vector memory
+- weekly manifests and audit logs
+- no silent overwrite
+
+14.2 Performance rules
+- Parquet partitioning by symbol/timeframe/date
+- Polars lazy scans where possible
+- DuckDB for aggregate queries and reporting
+- Numba for repeated simulation loops
+- Ray for parallel job execution
+- incremental rebuild first
+
+14.3 Recovery rules
+- every weekly run has run_id
+- every artifact stored under run_id
+- failed stages must be restartable
+- partial stage completion must not corrupt published registry
+- publish step only after validation passes
+
+================================================================================
+15) PHASED IMPLEMENTATION PLAN
+================================================================================
+
+Phase A1
+- master platform model
+- complete
+
+Phase A2
+- logical design
+- complete
+
+Phase A3
+- technical spec for canonical ingest, dedup, upsert, continuity, service access
+- complete in this document
+
+Phase A4
+- project folder and manifest contract spec
+
+Phase A5
+- canonical ingest implementation spec
+
+Phase A6
+- DuckDB metadata schema spec
+
+Phase A7
+- weekly runner orchestration spec
+
+Phase A8
+- service API / SDK contract spec
+
+Phase A9
+- live feedback and learning loop spec
+
+================================================================================
+16) PROGRESSION CHECKLIST
+================================================================================
+
+[LOCKED]
+[done] split database platform vs bot platform
+[done] lock modern stack
+[done] lock mandatory TF coverage
+[done] lock micro exit as base layer
+[done] lock central memory / labels / registry principle
+[done] define weekly intelligence update direction
+
+[PHASE A3]
+[done] canonical M1 schema
+[done] duplicate prevention layers
+[done] upsert rules
+[done] quarantine rules
+[done] timeframe rebuild policy
+[done] continuity classification
+[done] feature versioning rule
+[done] service access model
+[done] live feedback write-back model
+[done] robustness and recovery rules
+
+[NEXT]
+[todo] A4 folder + manifest contract
+[todo] A5 canonical ingest implementation spec
+[todo] A6 DuckDB metadata schema
+[todo] A7 weekly orchestration spec
+[todo] A8 API/SDK service contract
+[todo] A9 live feedback learning loop detail
+
+================================================================================
+17) STEP UPDATE TEMPLATE
+================================================================================
+
+STEP UPDATE
+- date:
+- phase:
+- step_id:
+- version:
+- objective:
+- inputs_used:
+- locked_rules_respected:
+- output_files:
+- decisions_made:
+- strategy_or_logic_affected:
+- risks_found:
+- validation_result:
+- next_step:
+
+================================================================================
+18) STRATEGY / LOGIC RECORD TEMPLATE
+================================================================================
+
+STRATEGY / LOGIC RECORD
+- record_id:
+- strategy_family:
+- strategy_variant:
+- timeframe:
+- regime:
+- entry_logic_version:
+- exit_logic_version:
+- micro_exit_version:
+- feature_version:
+- label_version:
+- train_window:
+- validation_window:
+- oos_window:
+- core_filters:
+- tp_sl_surface_used:
+- trade_count:
+- net_profit:
+- profit_factor:
+- expectancy:
+- max_drawdown:
+- stability_score:
+- transition_damage:
+- plateau_width:
+- decision:
+- notes:
+- published_package_id:
+
+================================================================================
+19) FINAL LOCKED CONCLUSION
+================================================================================
+
+The correct long-term design is:
+
+1. Intelligent Database Platform is the central brain for research memory,
+   labels, package selection, and historical intelligence.
+2. Bot Runtime Platform is a thin, fast execution client that requests guidance
+   from the database platform and sends live outcomes back.
+3. This split prevents repeated rework, supports many future bot types, improves
+   maintainability, and allows weekly intelligence compounding.
+
+END OF DOCUMENT
