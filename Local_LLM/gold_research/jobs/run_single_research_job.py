@@ -1,38 +1,14 @@
-# ==================================================================================================
-# FILE: run_single_research_job.py
-# PATH: C:\Data\Bot\Local_LLM\gold_research\jobs\run_single_research_job.py
-# VERSION: v1.0.0
-#
-# CHANGELOG:
-# - v1.0.0
-#   1) Create standalone research backtest worker for intelligent batch system
-#   2) Read one job spec JSON and execute one complete backtest
-#   3) Support multiple strategy families, entry logics, micro exits, regime filters, cooldowns
-#   4) Export trades, signals, metrics, equity, diagnostics, and build summary
-#   5) Designed for long-running research campaigns and resume-safe batch execution
-#
-# DESIGN GOAL:
-# - This worker executes ONE research job from the master manifest.
-# - It is intentionally self-contained so batch orchestration stays simple and durable.
-# - It favors transparency + reproducibility over hidden complexity.
-#
-# IMPORTANT:
-# - This is a bar-based research backtester.
-# - It is suitable for discovery ranking and diagnostics.
-# - It is not a tick-accurate execution simulator.
-#
-# EXPECTED CLI:
-#   python run_single_research_job.py --job <job.json> --result-root <dir>
-#
-# OUTPUT PER JOB:
-# - build_summary.json
-# - metrics.json
-# - trades.csv
-# - signals.csv
-# - equity_curve.csv
-# - diagnostics.json
-# - used_job.json
-# ==================================================================================================
+# ============================================================
+# ชื่อโค้ด: run_single_research_job.py
+# เวอร์ชัน: v1.0.1
+# เป้าหมาย: รัน backtest 1 งานจาก job spec (JSON) โดยรองรับ schema เก่าและ schema ใหม่แบบ backward-compatible
+# changelog:
+# - v1.0.1
+#   - เพิ่ม normalize_job_payload(job) เพื่อ validate/normalize และ derive result_key
+#   - รองรับ feature_cache_path เป็น input หลัก (schema ใหม่) และ fallback ไป ohlc_csv (schema เก่า)
+# ที่อยู่ไฟล์: C:\Data\Bot\Local_LLM\gold_research\jobs\run_single_research_job.py
+# คำสั่งรัน: python C:\Data\Bot\Local_LLM\gold_research\jobs\run_single_research_job.py --job <job.json> --result-root <dir>
+# ============================================================
 
 from __future__ import annotations
 
@@ -47,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-VERSION = "v1.0.0"
+VERSION = "v1.0.1"
 
 
 # --------------------------------------------------------------------------------------------------
@@ -151,6 +127,14 @@ def stable_div(numerator: float, denominator: float, default: float = 0.0) -> fl
     return numerator / denominator
 
 
+def clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
 def timeframe_minutes(tf: str) -> int:
     if tf not in TIMEFRAME_TO_MINUTES:
         raise RuntimeError(f"Unsupported timeframe: {tf}")
@@ -222,6 +206,145 @@ def load_ohlc_csv(path: Path) -> pd.DataFrame:
         raise RuntimeError(f"Not enough bars after normalization: {len(out)} rows")
 
     return out
+
+
+def load_ohlc_from_feature_cache(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise RuntimeError(f"feature_cache_path not found: {path}")
+
+    cols = ["time", "open", "high", "low", "close", "volume"]
+    try:
+        df = pd.read_parquet(path, columns=cols).copy()
+    except Exception:
+        df = pd.read_parquet(path).copy()
+
+    if df.empty:
+        raise RuntimeError(f"feature cache is empty: {path}")
+
+    found_time = detect_column(list(df.columns), ["time", "datetime", "date", "timestamp", "ts"])
+    open_col = detect_column(list(df.columns), ["open", "o"])
+    high_col = detect_column(list(df.columns), ["high", "h"])
+    low_col = detect_column(list(df.columns), ["low", "l"])
+    close_col = detect_column(list(df.columns), ["close", "c"])
+    volume_col = detect_column(list(df.columns), ["tick_volume", "volume", "vol", "real_volume"])
+
+    missing = []
+    if found_time is None:
+        missing.append("time")
+    if open_col is None:
+        missing.append("open")
+    if high_col is None:
+        missing.append("high")
+    if low_col is None:
+        missing.append("low")
+    if close_col is None:
+        missing.append("close")
+    if missing:
+        raise RuntimeError(f"Feature cache missing required OHLC columns at {path}: {missing}")
+
+    out = pd.DataFrame(
+        {
+            "time": pd.to_datetime(df[found_time], errors="coerce"),
+            "open": pd.to_numeric(df[open_col], errors="coerce"),
+            "high": pd.to_numeric(df[high_col], errors="coerce"),
+            "low": pd.to_numeric(df[low_col], errors="coerce"),
+            "close": pd.to_numeric(df[close_col], errors="coerce"),
+        }
+    )
+
+    if volume_col is not None:
+        out["volume"] = pd.to_numeric(df[volume_col], errors="coerce").fillna(0.0)
+    else:
+        out["volume"] = 0.0
+
+    out = out.dropna(subset=["time", "open", "high", "low", "close"]).copy()
+    out = out.sort_values("time").reset_index(drop=True)
+    out["time"] = out["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+    if len(out) < 300:
+        raise RuntimeError(f"Not enough bars after normalization: {len(out)} rows")
+
+    return out
+
+
+def normalize_job_payload(job: dict) -> dict:
+    if not isinstance(job, dict):
+        raise RuntimeError("Job payload must be a JSON object")
+
+    normalized: Dict[str, Any] = dict(job)
+    for key in list(normalized.keys()):
+        if isinstance(normalized.get(key), str):
+            normalized[key] = normalized[key].strip()
+
+    job_id = clean_str(normalized.get("job_id"))
+    if not job_id:
+        raise RuntimeError("Job payload missing required key: job_id")
+
+    timeframe = clean_str(normalized.get("timeframe"))
+    strategy_family = clean_str(normalized.get("strategy_family"))
+    entry_logic = clean_str(normalized.get("entry_logic"))
+    micro_exit = clean_str(normalized.get("micro_exit"))
+    regime_filter = clean_str(normalized.get("regime_filter"))
+    side_policy = clean_str(normalized.get("side_policy"))
+    volatility_filter = clean_str(normalized.get("volatility_filter"))
+    trend_strength_filter = clean_str(normalized.get("trend_strength_filter"))
+
+    missing = []
+    if not timeframe:
+        missing.append("timeframe")
+    if not strategy_family:
+        missing.append("strategy_family")
+    if not entry_logic:
+        missing.append("entry_logic")
+    if not micro_exit:
+        missing.append("micro_exit")
+    if not regime_filter:
+        missing.append("regime_filter")
+    if clean_str(normalized.get("cooldown_bars")) == "":
+        missing.append("cooldown_bars")
+    if not side_policy:
+        missing.append("side_policy")
+    if not volatility_filter:
+        missing.append("volatility_filter")
+    if not trend_strength_filter:
+        missing.append("trend_strength_filter")
+    if missing:
+        raise RuntimeError(f"Job payload job_id={job_id} missing required keys: {sorted(missing)}")
+
+    feature_cache_path = clean_str(normalized.get("feature_cache_path"))
+    ohlc_csv = clean_str(normalized.get("ohlc_csv"))
+    if not (feature_cache_path or ohlc_csv):
+        raise RuntimeError(
+            f"Job payload job_id={job_id} missing data reference: require one of ['feature_cache_path', 'ohlc_csv']"
+        )
+
+    derived_result_key = (
+        clean_str(normalized.get("result_key"))
+        or clean_str(normalized.get("parameter_fingerprint"))
+        or job_id
+    )
+    normalized["job_id"] = job_id
+    normalized["timeframe"] = timeframe
+    normalized["strategy_family"] = strategy_family
+    normalized["entry_logic"] = entry_logic
+    normalized["micro_exit"] = micro_exit
+    normalized["regime_filter"] = regime_filter
+    normalized["side_policy"] = side_policy
+    normalized["volatility_filter"] = volatility_filter
+    normalized["trend_strength_filter"] = trend_strength_filter
+    normalized["result_key"] = derived_result_key
+    normalized["feature_cache_path"] = feature_cache_path
+    normalized["htf_feature_cache_path"] = clean_str(normalized.get("htf_feature_cache_path"))
+    normalized["htf_context_timeframe"] = clean_str(normalized.get("htf_context_timeframe"))
+    normalized["parameter_fingerprint"] = clean_str(normalized.get("parameter_fingerprint"))
+    normalized["one_axis_group_key"] = clean_str(normalized.get("one_axis_group_key"))
+    normalized["rank_priority"] = clean_str(normalized.get("rank_priority"))
+    normalized["status"] = clean_str(normalized.get("status"))
+    normalized["ohlc_csv"] = ohlc_csv
+    if clean_str(normalized.get("symbol")) == "":
+        normalized["symbol"] = "XAUUSD"
+    normalized["cooldown_bars"] = int(float(normalized.get("cooldown_bars")))
+    return normalized
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1125,7 +1248,10 @@ def build_metrics(
 # --------------------------------------------------------------------------------------------------
 def build_summary_payload(
     job: Dict[str, Any],
-    ohlc_path: Path,
+    ohlc_path: Optional[Path],
+    feature_cache_path: Optional[Path],
+    htf_feature_cache_path: Optional[Path],
+    input_mode: str,
     result_dir: Path,
     df: pd.DataFrame,
     signals_df: pd.DataFrame,
@@ -1147,7 +1273,10 @@ def build_summary_payload(
         "side_policy": str(job["side_policy"]),
         "volatility_filter": str(job["volatility_filter"]),
         "trend_strength_filter": str(job["trend_strength_filter"]),
-        "ohlc_csv": str(ohlc_path),
+        "input_mode": str(input_mode),
+        "feature_cache_path": str(feature_cache_path) if feature_cache_path is not None else "",
+        "htf_feature_cache_path": str(htf_feature_cache_path) if htf_feature_cache_path is not None else "",
+        "ohlc_csv": str(ohlc_path) if ohlc_path is not None else "",
         "result_dir": str(result_dir),
         "input_bar_count": int(len(df)),
         "signal_count": int(len(signals_df)),
@@ -1179,9 +1308,18 @@ def main() -> None:
     if not job_path.exists():
         raise RuntimeError(f"Job file not found: {job_path}")
 
-    job = read_json(job_path)
-    ohlc_path = Path(str(job["ohlc_csv"]))
-    result_dir = result_root / str(job["result_key"])
+    job = normalize_job_payload(read_json(job_path))
+    result_key = str(job["result_key"])
+    result_dir = result_root / result_key
+
+    feature_cache_path = Path(job["feature_cache_path"]) if clean_str(job.get("feature_cache_path")) else None
+    htf_feature_cache_path = Path(job["htf_feature_cache_path"]) if clean_str(job.get("htf_feature_cache_path")) else None
+    ohlc_path = Path(job["ohlc_csv"]) if clean_str(job.get("ohlc_csv")) else None
+
+    if feature_cache_path is not None:
+        input_mode = "feature_cache"
+    else:
+        input_mode = "ohlc_csv"
 
     ensure_dir(result_root)
     ensure_dir(result_dir)
@@ -1196,7 +1334,10 @@ def main() -> None:
 
     write_json(used_job_path, job)
 
-    df = load_ohlc_csv(ohlc_path)
+    if input_mode == "feature_cache":
+        df = load_ohlc_from_feature_cache(feature_cache_path)
+    else:
+        df = load_ohlc_csv(ohlc_path)
     df = compute_features(df)
 
     signals_df, trades_df, equity_df, diagnostics = run_backtest(df, job)
@@ -1211,6 +1352,9 @@ def main() -> None:
     build_summary = build_summary_payload(
         job=job,
         ohlc_path=ohlc_path,
+        feature_cache_path=feature_cache_path,
+        htf_feature_cache_path=htf_feature_cache_path,
+        input_mode=input_mode,
         result_dir=result_dir,
         df=df,
         signals_df=signals_df,
