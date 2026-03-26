@@ -1,46 +1,23 @@
-# ==================================================================================================
-# FILE: run_intelligent_backtest_batch.py
-# PATH: C:\Data\Bot\Local_LLM\gold_research\jobs\run_intelligent_backtest_batch.py
-# VERSION: v1.0.0
-#
-# CHANGELOG:
-# - v1.0.0
-#   1) Create long-running batch runner for intelligent backtest system
-#   2) Read master manifest JSONL and execute pending jobs sequentially
-#   3) Persist append-only job_state.jsonl for resume safety
-#   4) Persist per-job logs and per-job spec snapshots
-#   5) Support interruption-safe restart without manual tracking
-#   6) Support max-jobs, shuffle, fail-fast, retry-failed, and worker timeout
-#
-# DESIGN RATIONALE:
-# - This file is the "execution orchestrator" for the full discovery campaign.
-# - It does not contain the trading logic itself.
-# - It delegates each job to a worker script:
-#       run_single_research_job.py
-# - Each job is materialized as a JSON file and passed to the worker.
-# - The runner can be stopped and restarted without losing completed work.
-#
-# HOW IT WORKS:
-# - Reads manifest JSONL
-# - Reads existing state JSONL
-# - Selects pending jobs
-# - Writes each job spec into job_specs/
-# - Calls worker script as a subprocess
-# - Writes append-only state events into job_state.jsonl
-# - Writes per-job stdout/stderr logs into logs/
-#
-# IMPORTANT:
-# - This runner assumes the worker script supports:
-#       python run_single_research_job.py --job <job_json_path> --result-root <dir>
-# - If your worker signature differs, change build_worker_command() only.
-#
-# PRODUCTION / RESEARCH BEHAVIOR:
-# - Safe for long-running campaigns
-# - Safe to resume after crash, reboot, or manual stop
-# - Does not require sitting in front of the screen all day
-# ==================================================================================================
-
 from __future__ import annotations
+
+"""
+ชื่อโค้ด: run_intelligent_backtest_batch.py
+เวอร์ชัน: v1.0.1
+เป้าหมาย: Production-grade batch runner ที่รองรับ manifest schema เก่าและใหม่แบบ backward-compatible
+changelog:
+- v1.0.1
+  1) รองรับ schema ใหม่ที่ใช้ feature_cache_path / htf_feature_cache_path / parameter_fingerprint / one_axis_group_key
+  2) ยกเลิกการบังคับ ohlc_csv และ result_key แบบเดิม
+  3) เพิ่ม normalize_manifest_row(row) พร้อม validation และ auto result_key injection
+  4) คง contract CLI และ worker invocation เดิมทั้งหมด
+  5) ปรับ load_manifest ให้ parse+normalize ทีละบรรทัดพร้อม error แสดงเลขแถวชัดเจน
+
+ที่อยู่ไฟล์:
+C:\Data\Bot\Local_LLM\gold_research\jobs\run_intelligent_backtest_batch.py
+
+คำสั่งรัน:
+python C:\Data\Bot\Local_LLM\gold_research\jobs\run_intelligent_backtest_batch.py --manifest C:\Data\Bot\central_backtest_results\research_jobs_full_discovery\research_job_manifest_full_discovery.jsonl --worker-script C:\Data\Bot\Local_LLM\gold_research\jobs\run_single_research_job.py --outdir C:\Data\Bot\central_backtest_results\intelligent_backtest_batch_run_01 --max-jobs 10 --timeout-sec 1800 --sleep-sec 1
+"""
 
 import argparse
 import json
@@ -52,14 +29,48 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-VERSION = "v1.0.0"
+VERSION = "v1.0.1"
+
+REQUIRED_BASE_KEYS = {
+    "job_id",
+    "timeframe",
+    "strategy_family",
+    "entry_logic",
+    "micro_exit",
+    "regime_filter",
+    "cooldown_bars",
+    "side_policy",
+    "volatility_filter",
+    "trend_strength_filter",
+}
+
+OPTIONAL_FORWARD_KEYS = {
+    "feature_cache_path",
+    "htf_context_timeframe",
+    "htf_feature_cache_path",
+    "parameter_fingerprint",
+    "one_axis_group_key",
+    "rank_priority",
+    "status",
+}
+
+STRING_NORMALIZE_KEYS = REQUIRED_BASE_KEYS | OPTIONAL_FORWARD_KEYS | {
+    "result_key",
+    "manifest_id",
+    "job_name",
+    "phase",
+    "symbol",
+    "logic_variant",
+    "pullback_zone_variant",
+    "management_variant",
+    "regime_variant",
+    "robustness_variant",
+    "ohlc_csv",
+}
 
 
-# --------------------------------------------------------------------------------------------------
-# DATA MODELS
-# --------------------------------------------------------------------------------------------------
 @dataclass
 class JobRunResult:
     job_id: str
@@ -73,9 +84,6 @@ class JobRunResult:
     error_message: str = ""
 
 
-# --------------------------------------------------------------------------------------------------
-# HELPERS
-# --------------------------------------------------------------------------------------------------
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -84,20 +92,31 @@ def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
 def read_jsonl(path: Path) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     if not path.exists():
         return rows
-
     with path.open("r", encoding="utf-8") as f:
         for line_no, raw in enumerate(f, start=1):
             line = raw.strip()
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                obj = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise RuntimeError(f"Invalid JSONL at {path} line {line_no}: {exc}") from exc
+            if isinstance(obj, dict):
+                rows.append(obj)
+            else:
+                raise RuntimeError(f"Invalid JSONL object at {path} line {line_no}: expected object")
     return rows
 
 
@@ -111,55 +130,82 @@ def write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def normalize_manifest_row(row: dict) -> dict:
+    if not isinstance(row, dict):
+        raise ValueError("row is not an object")
+
+    normalized: Dict[str, Any] = dict(row)
+    for key in STRING_NORMALIZE_KEYS:
+        if key in normalized:
+            normalized[key] = clean_str(normalized.get(key))
+
+    missing_required = [key for key in REQUIRED_BASE_KEYS if clean_str(normalized.get(key)) == ""]
+    if missing_required:
+        raise ValueError(f"missing required keys: {sorted(missing_required)}")
+
+    has_feature_cache = clean_str(normalized.get("feature_cache_path")) != ""
+    has_ohlc_csv = clean_str(normalized.get("ohlc_csv")) != ""
+    if not (has_feature_cache or has_ohlc_csv):
+        raise ValueError("missing data reference: require one of ['feature_cache_path', 'ohlc_csv']")
+
+    derived_result_key = (
+        clean_str(normalized.get("result_key"))
+        or clean_str(normalized.get("parameter_fingerprint"))
+        or clean_str(normalized.get("job_id"))
+    )
+    if derived_result_key == "":
+        raise ValueError("unable to derive result_key")
+    normalized["result_key"] = derived_result_key
+    normalized["job_id"] = clean_str(normalized.get("job_id"))
+    return normalized
+
+
 def load_manifest(path: Path) -> List[Dict[str, Any]]:
-    rows = read_jsonl(path)
-    if not rows:
-        raise RuntimeError(f"Manifest is empty or missing: {path}")
+    if not path.exists():
+        raise RuntimeError(f"Manifest not found: {path}")
 
-    required_keys = {
-        "job_id",
-        "result_key",
-        "timeframe",
-        "ohlc_csv",
-        "strategy_family",
-        "entry_logic",
-        "micro_exit",
-        "regime_filter",
-        "cooldown_bars",
-        "side_policy",
-        "volatility_filter",
-        "trend_strength_filter",
-    }
-
+    rows: List[Dict[str, Any]] = []
     seen_job_ids = set()
     seen_result_keys = set()
 
-    for idx, row in enumerate(rows, start=1):
-        missing = required_keys - set(row.keys())
-        if missing:
-            raise RuntimeError(f"Manifest row #{idx} missing keys: {sorted(missing)}")
+    with path.open("r", encoding="utf-8") as f:
+        for line_no, raw in enumerate(f, start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"Manifest row #{line_no} invalid JSON: {exc}") from exc
 
-        job_id = row["job_id"]
-        result_key = row["result_key"]
+            try:
+                normalized = normalize_manifest_row(parsed)
+            except Exception as exc:
+                raise RuntimeError(f"Manifest row #{line_no} schema error: {exc}") from exc
 
-        if job_id in seen_job_ids:
-            raise RuntimeError(f"Duplicate job_id in manifest: {job_id}")
-        if result_key in seen_result_keys:
-            raise RuntimeError(f"Duplicate result_key in manifest: {result_key}")
+            job_id = normalized["job_id"]
+            result_key = normalized["result_key"]
 
-        seen_job_ids.add(job_id)
-        seen_result_keys.add(result_key)
+            if job_id in seen_job_ids:
+                raise RuntimeError(f"Manifest row #{line_no} duplicate job_id: {job_id}")
+            if result_key in seen_result_keys:
+                raise RuntimeError(f"Manifest row #{line_no} duplicate result_key: {result_key}")
 
+            seen_job_ids.add(job_id)
+            seen_result_keys.add(result_key)
+            rows.append(normalized)
+
+    if not rows:
+        raise RuntimeError(f"Manifest is empty or missing: {path}")
     return rows
 
 
 def build_latest_status_map(state_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     latest: Dict[str, Dict[str, Any]] = {}
     for row in state_rows:
-        job_id = row.get("job_id")
-        if not job_id:
-            continue
-        latest[job_id] = row
+        job_id = clean_str(row.get("job_id"))
+        if job_id:
+            latest[job_id] = row
     return latest
 
 
@@ -169,15 +215,13 @@ def choose_jobs(
     retry_failed: bool,
 ) -> List[Dict[str, Any]]:
     selected: List[Dict[str, Any]] = []
-
     for row in manifest_rows:
         job_id = row["job_id"]
         last = latest_state_map.get(job_id)
         if last is None:
             selected.append(row)
             continue
-
-        status = str(last.get("status", "")).upper()
+        status = clean_str(last.get("status")).upper()
         if status == "SUCCESS":
             continue
         if status == "FAILED":
@@ -187,20 +231,18 @@ def choose_jobs(
         if status in {"RUNNING", "PENDING"}:
             selected.append(row)
             continue
-
         selected.append(row)
-
     return selected
 
 
 def safe_filename(text: str) -> str:
-    keep = []
+    out = []
     for ch in text:
         if ch.isalnum() or ch in {"-", "_", "."}:
-            keep.append(ch)
+            out.append(ch)
         else:
-            keep.append("_")
-    return "".join(keep)
+            out.append("_")
+    return "".join(out)
 
 
 def build_worker_command(
@@ -209,7 +251,6 @@ def build_worker_command(
     job_json_path: Path,
     result_root: Path,
 ) -> List[str]:
-    # Adjust only this function if your worker CLI signature is different.
     return [
         python_exe,
         str(worker_script),
@@ -229,8 +270,7 @@ def write_job_spec(job_specs_dir: Path, job: Dict[str, Any]) -> Path:
 def summarize_latest_statuses(latest_state_map: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
     counter: Counter[str] = Counter()
     for row in latest_state_map.values():
-        status = str(row.get("status", "UNKNOWN")).upper()
-        counter[status] += 1
+        counter[clean_str(row.get("status", "UNKNOWN")).upper()] += 1
     return dict(sorted(counter.items(), key=lambda kv: kv[0]))
 
 
@@ -249,24 +289,26 @@ def write_progress_summary(
     running_count = status_counts.get("RUNNING", 0)
     pending_like = manifest_total - success_count - failed_count - running_count
 
-    payload = {
-        "version": VERSION,
-        "generated_at_utc": utc_now_iso(),
-        "run_started_at_utc": run_started_at_utc,
-        "manifest_total_jobs": manifest_total,
-        "status_counts": status_counts,
-        "derived": {
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "running_count": running_count,
-            "pending_like_count": pending_like,
+    write_json(
+        path,
+        {
+            "version": VERSION,
+            "generated_at_utc": utc_now_iso(),
+            "run_started_at_utc": run_started_at_utc,
+            "manifest_total_jobs": manifest_total,
+            "status_counts": status_counts,
+            "derived": {
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "running_count": running_count,
+                "pending_like_count": pending_like,
+            },
+            "current_batch_progress": {
+                "current_job_index_1_based": current_job_index,
+                "selected_jobs_in_this_run": total_selected_jobs,
+            },
         },
-        "current_batch_progress": {
-            "current_job_index_1_based": current_job_index,
-            "selected_jobs_in_this_run": total_selected_jobs,
-        },
-    }
-    write_json(path, payload)
+    )
 
 
 def run_one_job(
@@ -279,8 +321,8 @@ def run_one_job(
     logs_dir: Path,
     timeout_sec: Optional[int],
 ) -> JobRunResult:
-    job_id = str(job["job_id"])
-    result_key = str(job["result_key"])
+    job_id = clean_str(job["job_id"])
+    result_key = clean_str(job["result_key"])
     result_dir = result_root / safe_filename(result_key)
     ensure_dir(result_dir)
 
@@ -296,10 +338,7 @@ def run_one_job(
 
     started = time.perf_counter()
     error_message = ""
-
-    with stdout_log_path.open("w", encoding="utf-8") as stdout_f, stderr_log_path.open(
-        "w", encoding="utf-8"
-    ) as stderr_f:
+    with stdout_log_path.open("w", encoding="utf-8") as stdout_f, stderr_log_path.open("w", encoding="utf-8") as stderr_f:
         try:
             completed = subprocess.run(
                 cmd,
@@ -319,7 +358,6 @@ def run_one_job(
 
     duration_sec = time.perf_counter() - started
     status = "SUCCESS" if returncode == 0 else "FAILED"
-
     return JobRunResult(
         job_id=job_id,
         result_key=result_key,
@@ -333,13 +371,8 @@ def run_one_job(
     )
 
 
-# --------------------------------------------------------------------------------------------------
-# CLI
-# --------------------------------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run long-running intelligent backtest jobs from a JSONL manifest."
-    )
+    parser = argparse.ArgumentParser(description="Run long-running intelligent backtest jobs from a JSONL manifest.")
     parser.add_argument("--manifest", required=True, help="Path to manifest JSONL")
     parser.add_argument("--worker-script", required=True, help="Path to worker script")
     parser.add_argument("--outdir", required=True, help="Output directory for run state/results/logs")
@@ -348,51 +381,16 @@ def parse_args() -> argparse.Namespace:
         default=sys.executable,
         help="Python executable used to launch worker script (default: current interpreter)",
     )
-    parser.add_argument(
-        "--max-jobs",
-        type=int,
-        default=0,
-        help="Maximum number of jobs to run in this invocation (0 = no limit)",
-    )
-    parser.add_argument(
-        "--shuffle",
-        action="store_true",
-        help="Shuffle pending jobs before execution",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=20260321,
-        help="Shuffle seed when --shuffle is enabled",
-    )
-    parser.add_argument(
-        "--fail-fast",
-        action="store_true",
-        help="Stop immediately on first job failure",
-    )
-    parser.add_argument(
-        "--retry-failed",
-        action="store_true",
-        help="Include FAILED jobs again when selecting pending jobs",
-    )
-    parser.add_argument(
-        "--timeout-sec",
-        type=int,
-        default=0,
-        help="Per-job worker timeout in seconds (0 = no timeout)",
-    )
-    parser.add_argument(
-        "--sleep-sec",
-        type=float,
-        default=0.0,
-        help="Sleep between jobs to reduce system pressure",
-    )
+    parser.add_argument("--max-jobs", type=int, default=0, help="Maximum number of jobs to run in this invocation (0 = no limit)")
+    parser.add_argument("--shuffle", action="store_true", help="Shuffle pending jobs before execution")
+    parser.add_argument("--seed", type=int, default=20260321, help="Shuffle seed when --shuffle is enabled")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop immediately on first job failure")
+    parser.add_argument("--retry-failed", action="store_true", help="Include FAILED jobs again when selecting pending jobs")
+    parser.add_argument("--timeout-sec", type=int, default=0, help="Per-job worker timeout in seconds (0 = no timeout)")
+    parser.add_argument("--sleep-sec", type=float, default=0.0, help="Sleep between jobs to reduce system pressure")
     return parser.parse_args()
 
 
-# --------------------------------------------------------------------------------------------------
-# MAIN
-# --------------------------------------------------------------------------------------------------
 def main() -> None:
     args = parse_args()
 
@@ -404,7 +402,6 @@ def main() -> None:
     timeout_sec = int(args.timeout_sec) if int(args.timeout_sec) > 0 else None
 
     ensure_dir(outdir)
-
     job_specs_dir = outdir / "job_specs"
     logs_dir = outdir / "logs"
     results_dir = outdir / "results"
@@ -418,8 +415,6 @@ def main() -> None:
     progress_summary_path = reports_dir / "progress_summary.json"
     launch_metadata_path = reports_dir / "launch_metadata.json"
 
-    if not manifest_path.exists():
-        raise RuntimeError(f"Manifest not found: {manifest_path}")
     if not worker_script.exists():
         raise RuntimeError(f"Worker script not found: {worker_script}")
 
@@ -432,35 +427,34 @@ def main() -> None:
         latest_state_map=latest_state_map,
         retry_failed=bool(args.retry_failed),
     )
-
     if args.shuffle:
-        rng = random.Random(args.seed)
-        rng.shuffle(selected_jobs)
-
+        random.Random(args.seed).shuffle(selected_jobs)
     if max_jobs > 0:
         selected_jobs = selected_jobs[:max_jobs]
 
     run_started_at_utc = utc_now_iso()
-    launch_metadata = {
-        "version": VERSION,
-        "run_started_at_utc": run_started_at_utc,
-        "manifest": str(manifest_path),
-        "worker_script": str(worker_script),
-        "outdir": str(outdir),
-        "python_exe": python_exe,
-        "max_jobs": max_jobs,
-        "shuffle": bool(args.shuffle),
-        "seed": int(args.seed),
-        "fail_fast": bool(args.fail_fast),
-        "retry_failed": bool(args.retry_failed),
-        "timeout_sec": timeout_sec,
-        "sleep_sec": float(args.sleep_sec),
-        "manifest_total_jobs": len(manifest_rows),
-        "selected_jobs_in_this_run": len(selected_jobs),
-        "existing_state_rows": len(existing_state_rows),
-        "existing_status_counts": summarize_latest_statuses(latest_state_map),
-    }
-    write_json(launch_metadata_path, launch_metadata)
+    write_json(
+        launch_metadata_path,
+        {
+            "version": VERSION,
+            "run_started_at_utc": run_started_at_utc,
+            "manifest": str(manifest_path),
+            "worker_script": str(worker_script),
+            "outdir": str(outdir),
+            "python_exe": python_exe,
+            "max_jobs": max_jobs,
+            "shuffle": bool(args.shuffle),
+            "seed": int(args.seed),
+            "fail_fast": bool(args.fail_fast),
+            "retry_failed": bool(args.retry_failed),
+            "timeout_sec": timeout_sec,
+            "sleep_sec": float(args.sleep_sec),
+            "manifest_total_jobs": len(manifest_rows),
+            "selected_jobs_in_this_run": len(selected_jobs),
+            "existing_state_rows": len(existing_state_rows),
+            "existing_status_counts": summarize_latest_statuses(latest_state_map),
+        },
+    )
 
     print("=" * 120)
     print(f"[START] version={VERSION}")
@@ -486,11 +480,9 @@ def main() -> None:
 
     run_success = 0
     run_failed = 0
-
     for idx, job in enumerate(selected_jobs, start=1):
-        job_id = str(job["job_id"])
-        result_key = str(job["result_key"])
-
+        job_id = clean_str(job["job_id"])
+        result_key = clean_str(job["result_key"])
         job_json_path = write_job_spec(job_specs_dir, job)
 
         append_jsonl(
@@ -513,10 +505,10 @@ def main() -> None:
         print(
             f"[RUN] {idx}/{len(selected_jobs)} "
             f"job_id={job_id} "
-            f"timeframe={job['timeframe']} "
-            f"strategy={job['strategy_family']} "
-            f"entry={job['entry_logic']} "
-            f"micro_exit={job['micro_exit']}"
+            f"timeframe={clean_str(job.get('timeframe'))} "
+            f"strategy={clean_str(job.get('strategy_family'))} "
+            f"entry={clean_str(job.get('entry_logic'))} "
+            f"micro_exit={clean_str(job.get('micro_exit'))}"
         )
 
         result = run_one_job(
@@ -587,7 +579,6 @@ def main() -> None:
             )
             if result.error_message:
                 print(f"[FAIL-REASON] {result.error_message}")
-
             if args.fail_fast:
                 print("[STOP] fail-fast enabled, stopping on first failure.")
                 break
