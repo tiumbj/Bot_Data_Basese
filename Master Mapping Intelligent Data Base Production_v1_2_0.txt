@@ -1,0 +1,479 @@
+MASTER MAPPING: INTELLIGENT DATA BASE -> PRODUCTION
+File: Master Mapping Intelligent Data Base Production_v1_2_0.txt
+Version: v1.2.0
+Date: 2026-03-26
+Timezone: Asia/Bangkok
+Status: Production recovery map after deep audit
+
+====================================================================
+1) PURPOSE OF THIS FILE
+====================================================================
+ไฟล์นี้เป็น production truth map ฉบับอัปเดตหลัง deep audit
+เพื่อหยุดการวนของโปรเจกต์ และบังคับให้ทุกงานใหม่ตอบได้ชัดเจนว่า:
+1. งานนี้อยู่ layer ไหน
+2. งานนี้เพิ่ม runtime truth หรือเพิ่ม spec/document
+3. งานนี้ปิด production gap ตรงไหน
+4. งานนี้ต่อกับ chain กลางเส้นเดียวหรือไม่
+
+Chain กลางที่ต้องยึดจากนี้:
+CANONICAL DATA -> RESEARCH EVIDENCE -> REGISTRY -> FEATURE/LABEL RUNTIME -> INTELLIGENT DB -> DOWNSTREAM BOT
+
+ถ้างานใหม่ตอบไม่ได้ครบ 4 ข้อนี้ = ห้ามเริ่ม
+
+====================================================================
+2) ROOT CAUSE SUMMARY FROM DEEP AUDIT
+====================================================================
+ROOT CAUSE อันดับ 1:
+ไม่มี single operational spine ที่บังคับให้ทุกงานต้องปิด production gap ก่อนขยับไป layer ถัดไป
+
+ROOT CAUSE อันดับ 2:
+มีการปนกันระหว่าง “สิ่งที่มีอยู่จริงใน runtime” กับ “spec / mapping / plan”
+ทำให้ความคืบหน้าที่เห็นไม่เท่ากับความพร้อม production
+
+ROOT CAUSE อันดับ 3:
+research quantity โตเร็วกว่า research truth
+คือมีไฟล์ มี run มี output มากขึ้น แต่ยังไม่ได้ standardized evidence ที่ publish เข้า registry ได้จริง
+
+ROOT CAUSE อันดับ 4:
+runner/orchestration ถูกใช้เพื่อแก้ปัญหาเฉพาะหน้าหลายรอบ
+แต่ยังไม่ได้ลด overhead เชิงระบบให้เหลือ production execution path เดียว
+
+ROOT CAUSE อันดับ 5:
+visibility ต่ำ
+ผู้ใช้มองไม่เห็นชัดว่าตอนนี้งานที่รันอยู่เป็น:
+- preflight
+- execution
+- summary only
+- runtime production
+- หรือ spec scaffolding
+
+ROOT CAUSE อันดับ 6:
+weekly scope, current bootstrap scope, และ locked research universe ยังไม่เท่ากัน
+จึงเกิดภาพลวงว่าระบบครอบจักรวาลแล้ว ทั้งที่ยังไม่ครอบ TF truth ทั้งหมด
+
+ROOT CAUSE อันดับ 7:
+feature / label / regime layer ยังเป็นจุดอ่อนเชิง runtime
+แม้มีไฟล์และ concept มาก แต่ยังไม่ operational แบบ end-to-end
+
+ROOT CAUSE อันดับ 8:
+registry flow ยังไม่เป็น hard gate กลาง
+ผลวิจัยจำนวนมากยังไม่ถูก promote/demote ด้วยกฎเดียวที่ downstream bot ใช้ต่อได้จริง
+
+
+[LOCKED ROOT CAUSE]
+RC-EXEC-RESUME-001: Execution runner lacks resume-safe state and deterministic restart recovery.
+
+[ROOT CAUSE DESCRIPTION]
+Current execution runner can continue past per-job errors via continue-on-error, but it cannot safely resume after process kill, machine shutdown, restart, or interrupted shard execution. This causes:
+1. repeated shard reruns,
+2. output fragmentation across multiple outdirs,
+3. wasted compute time,
+4. higher operational risk for long-running research/backtest jobs,
+5. non-production-safe execution recovery behavior.
+
+[LOCKED PRODUCTION REQUIREMENT]
+Any runner promoted to production execution standard must provide true resume-safe execution.
+
+[LOCKED ROOT CAUSE]
+RC-GOV-EXEC-003: Known execution defects were identified in the current runner, but the same runner continued to be used as active execution infrastructure. This created a governance failure: audit findings were not converted into blocking execution rules.
+
+[DESCRIPTION]
+The project already proved that v1.0.8 has major execution weaknesses:
+- no resume-safe state,
+- partial shard stalls,
+- fragmented rerun workflow,
+- high orchestration / I/O overhead.
+
+Despite that, the runner continued to be used for active execution. This means the problem is not only technical but also operational-governance related.
+
+[LOCKED RULE]
+Any runner with known blocking execution defects must be downgraded immediately to:
+- research-use only, or
+- controlled seed execution only.
+
+It must not continue as the default execution standard.
+
+[MANDATORY ACTION]
+Audit findings must be converted into execution gates.
+If a runner fails a production execution gate, future runs on that runner must be explicitly marked as temporary/non-production.
+
+[MANDATORY CAPABILITIES]
+1. Persistent execution state store
+   - Must store shard state, group state, and job state in a persistent store.
+   - SQLite is acceptable as minimum production baseline.
+
+2. Deterministic restart recovery
+   - Restarting the same shard in the same outdir must resume from prior state.
+   - Completed jobs/groups must be skipped automatically.
+   - No manual outdir fork should be required for normal recovery.
+
+3. Checkpoint granularity
+   - Must checkpoint at least at group-level.
+   - Preferred: group-level + job-level status tracking.
+
+4. Progress reconstruction
+   - live progress must be reconstructable from persisted state after restart.
+   - Progress numbers must not reset to zero unless state is intentionally reset.
+
+5. Output consistency
+   - Result outputs must remain deterministic under restart.
+   - Restart must not duplicate already completed result rows.
+   - Restart must not require manual merge of partially completed outputs under normal operation.
+
+6. Recovery observability
+   - Runner must report:
+     - resumed_groups
+     - resumed_jobs
+     - skipped_completed_groups
+     - skipped_completed_jobs
+     - recovery_start_time
+     - recovery_status
+
+[LOCKED OPERATIONAL RULE]
+A runner without resume-safe state may be used only for controlled seed execution or temporary research use.
+It must not be treated as production-grade execution infrastructure.
+
+[VERSION DECISION]
+- v1.0.8 execution runner:
+  allowed_for = controlled_seed_execution_only
+  production_execution_standard = FAIL
+
+- next promoted execution runner:
+  must_pass = resume_safe_execution_requirement
+
+[ACCEPTANCE TEST]
+The runner is not considered production-safe until it passes all of the following:
+1. Start shard execution.
+2. Let it complete a measurable portion of groups/jobs.
+3. Kill the process.
+4. Restart with the same outdir and same shard arguments.
+5. Verify:
+   - completed work is skipped,
+   - progress continues from prior persisted state,
+   - results are not duplicated,
+   - no manual merge is required,
+   - recovery metrics are reported correctly.
+
+[LOCKED DIRECTION]
+Resume-safe recovery is mandatory for the next execution runner promotion.
+No future claim of “production execution ready” is valid without this capability.
+
+====================================================================
+3) LOCKED PROJECT TRUTH (RECONFIRMED)
+====================================================================
+เป้าหมายระบบ:
+สร้าง production-grade gold research + intelligent database platform สำหรับ XAUUSD/GOLD
+ที่ใช้ฐานข้อมูลกลางเป็น source of truth ให้ research, ranking, deployment, และ bot ปลายน้ำ
+
+Locked research timeframe universe:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+Locked non-negotiable rules:
+- ห้ามลดระบบเหลือแค่ bot ยิง order
+- ห้ามใช้ VectorBT เป็น production core
+- ห้ามข้าม micro exit
+- ห้ามวิจัยเฉพาะ TF ที่สะดวก
+- ห้าม promote strategy โดยไม่มี registry / approval flow
+- ห้ามให้ bot สร้าง truth เองนอกฐานข้อมูลกลาง
+- ห้ามนับ spec/document ว่าเท่ากับ runtime completion
+
+====================================================================
+4) CURRENT TRUTH: WHAT IS REAL vs WHAT IS STILL A GAP
+====================================================================
+4.1 THINGS THAT ARE REAL NOW
+- canonical root/path structure exists
+- central bootstrap exists
+- multi-timeframe dataset direction exists
+- research/backtest runners exist
+- truth gate exists
+- seed-manifest stage is now required and defined
+- central registry direction exists
+- project lock / mapping / conversation lock exists
+
+4.2 THINGS THAT MUST NOT BE OVERCOUNTED
+- architecture/spec files
+- phase model docs
+- mapping docs
+- partial scripts that are not proven operational end-to-end
+- runner versions that only solve monitoring/resume but do not close production truth
+
+4.3 THINGS THAT ARE STILL PRODUCTION GAPS
+- full canonical dataset integrity automation
+- reproducible versioned research snapshots
+- standardized evidence truth across all locked TF
+- registry auto-publish gate from research outputs
+- feature schema lock in operational form
+- label generation runtime
+- regime labeling runtime
+- intelligent DB retrieval/runtime service
+- MT5 closed-loop feedback integration
+
+====================================================================
+5) REPO-TO-PRODUCTION MASTER LAYERS (UPDATED)
+====================================================================
+LAYER A - CANONICAL DATA TRUTH
+Purpose:
+- single market-data truth
+- reproducible multi-TF datasets
+- shared source for all downstream consumers
+
+Current status:
+- FOUNDATION EXISTS
+- NOT YET FULLY CLOSED AS OPERATIONAL TRUTH
+
+To be considered production-closed:
+- one canonical source path only
+- integrity checks pass automatically
+- versioned snapshots exist
+- all locked TF covered
+
+LAYER B - RESEARCH EVIDENCE TRUTH
+Purpose:
+- generate standardized evidence
+- enforce locked TF universe
+- enforce micro exit as mandatory base layer
+- expose kill-stage / reject-reason truth
+
+Current status:
+- NOW HAS TRUTH GATE
+- STILL NOT FULLY CLOSED UNTIL SEED MANIFEST AND STANDARDIZED EVIDENCE FLOW ARE OPERATIONAL
+
+To be considered production-closed:
+- every locked TF has evidence status
+- every locked TF has micro-exit evidence status
+- kill-stage truth is measurable
+- full-run can only start from approved seed manifest
+
+LAYER C - REGISTRY TRUTH
+Purpose:
+- candidate -> approved -> deprecated lifecycle
+- promote only from evidence, not from opinion
+- provide one downstream query source
+
+Current status:
+- STRUCTURE EXISTS
+- NOT YET HARD-GATED IN DAILY/WEEKLY FLOW
+
+To be considered production-closed:
+- research output auto-publishes into candidate registry
+- approval rules are centralized
+- deprecated path is explicit
+- downstream bot reads from approved truth only
+
+LAYER D - FEATURE / LABEL / REGIME RUNTIME TRUTH
+Purpose:
+- calculate shared feature cache
+- create regime labels
+- create execution-relevant outcome labels
+- support retrieval and similar-case lookup
+
+Current status:
+- SPEC STRONG / RUNTIME WEAK
+
+To be considered production-closed:
+- build_base_feature_cache works end-to-end
+- schema is locked in operational form
+- labels are reproducible and queryable
+- regime runtime is recurring, not ad hoc
+
+LAYER E - INTELLIGENT DATABASE RUNTIME TRUTH
+Purpose:
+- queryable intelligence layer for runtime and human review
+- strategy case retrieval
+- entry/exit/TP-SL principle lookup by regime and TF
+
+Current status:
+- DIRECTION CLEAR
+- RUNTIME NOT YET CLOSED
+
+To be considered production-closed:
+- ingestion from registry + features + labels works
+- fast query contract exists
+- bot and human tools can retrieve same truth
+
+LAYER F - DOWNSTREAM BOT / MT5 PRODUCTION TRUTH
+Purpose:
+- runtime decision consumes approved truth only
+- no self-invented strategy logic outside central database
+
+Current status:
+- DOWNSTREAM DIRECTION EXISTS
+- FEEDBACK LOOP NOT YET CLOSED
+
+To be considered production-closed:
+- MT5 path reads approved package only
+- decision logging maps back to central truth
+- feedback loop writes execution outcomes back to database
+
+====================================================================
+6) RUNNER AUDIT: WHAT EACH CLASS OF RUNNER IS ALLOWED TO DO
+====================================================================
+Class 1: Preflight / orchestration runner
+Allowed:
+- manifest scan
+- support validation
+- state/progress/debug
+Not allowed to be treated as:
+- production backtest truth
+- final evidence source by itself
+
+Class 2: Execution / backtest runner
+Allowed:
+- run research execution on approved input set
+- generate evidence rows
+Not allowed to be treated as:
+- production core of final bot
+- replacement for registry or intelligent DB
+
+Class 3: Legacy / exploratory / temporary runner
+Allowed:
+- local tests
+- debugging
+Not allowed to be used as:
+- promoted standard
+- evidence baseline
+
+New hard rule:
+Every runner must be tagged in one of the 3 classes above before use.
+If untagged = do not run.
+
+====================================================================
+7) NEW HARD GATES (MUST PASS IN ORDER)
+====================================================================
+GATE 1 - CANONICAL DATA GATE
+Pass only if:
+- all locked TF datasets exist
+- integrity checks pass
+- source/version is recorded
+
+GATE 2 - RESEARCH EVIDENCE TRUTH GATE
+Pass only if:
+- coverage_by_timeframe exists
+- micro_exit_coverage_matrix exists
+- kill_stage_summary exists
+- standardized_metrics_pack exists
+- recommendation is explicit
+
+GATE 3 - SEED MANIFEST GATE
+Pass only if:
+- truth_gate_seed_manifest.csv exists
+- truth_gate_seed_manifest.jsonl exists
+- eligible TFs are explicit
+- blocked killer-layer rows are excluded
+- recommendation says ALLOW_VT_FULL_RUN_ON_SEED_SET
+
+GATE 4 - EXECUTION EVIDENCE GATE
+Pass only if:
+- execution uses seed manifest, not full universe blindly
+- result pack is standardized
+- reject/error/missing-feature reasons are explicit
+
+GATE 5 - REGISTRY PUBLISH GATE
+Pass only if:
+- outputs are promoted into candidate registry automatically
+- approval rules are applied centrally
+- downstream packages can be built from approved truth only
+
+GATE 6 - FEATURE/LABEL/RUNTIME GATE
+Pass only if:
+- shared features are queryable
+- regime/label generation is recurring and reproducible
+
+GATE 7 - INTELLIGENT DB DEPLOYMENT GATE
+Pass only if:
+- retrieval contract exists
+- human and bot consume same truth
+- execution feedback can be reattached to source intelligence
+
+====================================================================
+8) CURRENT RECOVERY DECISION
+====================================================================
+As of v1.2.0, the project must follow this sequence only:
+
+1. Truth Gate
+2. Seed Manifest
+3. VT full-run on seed set only
+4. Standardized result pack
+5. Candidate registry publish
+6. Feature/label runtime closure
+7. Intelligent DB runtime
+8. Downstream bot integration
+
+Anything outside this sequence = deviation
+
+====================================================================
+9) WHAT MUST STOP IMMEDIATELY
+====================================================================
+- stop counting number of scripts as progress
+- stop opening full-universe run before truth gate + seed manifest
+- stop treating weekly scope as complete locked research coverage
+- stop promoting runner versions without runner class and gate purpose
+- stop mixing monitoring fixes with production truth claims
+- stop using storage-heavy runs without cleanup plan
+- stop building new spec files before current gate is closed
+
+====================================================================
+10) OPERATIONAL STATUS BOARD FORMAT (MANDATORY)
+====================================================================
+Every major task must report using this exact structure:
+
+TASK NAME:
+LAYER:
+RUNNER CLASS:
+INPUT TRUTH:
+OUTPUT TRUTH:
+GAP CLOSED:
+NEXT GATE:
+ALLOWED NEXT STEP:
+NOT ALLOWED:
+
+This is required to prevent ambiguity.
+
+====================================================================
+11) PRODUCTION DIRECTION FOR THE NEXT PHASE
+====================================================================
+Immediate next production phase:
+PHASE: RESEARCH EVIDENCE -> SEED MANIFEST -> CONTROLLED EXECUTION
+
+Required outputs:
+- truth_gate_seed_manifest.csv
+- truth_gate_seed_manifest.jsonl
+- truth_gate_seed_summary.json
+- truth_gate_seed_recommendation.txt
+- controlled execution result pack on seed set
+
+Why this is the correct next step:
+- it converts truth gate into executable truth
+- it limits wasteful full-universe runs
+- it creates the first enforceable handoff between research evidence and execution evidence
+- it prepares the exact package boundary needed before registry publish
+
+====================================================================
+12) SUCCESS DEFINITION OF v1.2.0
+====================================================================
+v1.2.0 is successful only if all conditions below are true:
+- deep audit root causes are recorded explicitly
+- operational spine is single and enforced
+- truth gate is not bypassed
+- seed manifest becomes mandatory input to execution
+- execution no longer starts from raw full universe by default
+- project status can be explained without ambiguity
+
+If any condition above is false, v1.2.0 is not complete.
+
+====================================================================
+13) FINAL RULE
+====================================================================
+From this version onward:
+No new work is considered valid unless it clearly moves one existing gate from OPEN -> CLOSED.

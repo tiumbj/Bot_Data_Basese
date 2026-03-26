@@ -1,0 +1,1044 @@
+﻿
+
+TimeCreated      : 3/26/2026 1:52:18 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.447.12.0) - Current Channel (Broad)
+
+TimeCreated      : 3/26/2026 1:42:09 PM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/26/2026 1:42:04 PM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff805c3d25641, 0xffffc78340a3edf0, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032626-6296-01.dmp. Report Id: 5177e95c-b244-4995-8207-f20040120b63.
+
+TimeCreated      : 3/26/2026 1:42:04 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/26/2026 1:42:04 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/26/2026 1:42:01 PM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/26/2026 1:41:59 PM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/26/2026 1:41:58 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/26/2026 1:42:05 PM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 1:12:12 PM on ‎3/‎26/‎2026 was unexpected.
+
+TimeCreated      : 3/26/2026 1:41:58 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/26/2026 1:41:58 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/26/2026 1:22:26 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.447.11.0) - Current Channel (Broad)
+
+TimeCreated      : 3/26/2026 1:12:16 PM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/26/2026 1:12:11 PM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000007e (0xffffffffc0000005, 0xfffff8007944c688, 0xfffffe01a476f588, 0xfffffe01a476ed90). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032626-6406-01.dmp. Report Id: abcec327-9688-44c0-b7f6-2777f0db6a95.
+
+TimeCreated      : 3/26/2026 1:12:11 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/26/2026 1:12:11 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/26/2026 1:12:09 PM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/26/2026 1:12:06 PM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/26/2026 1:12:05 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/26/2026 1:12:12 PM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 12:58:10 PM on ‎3/‎26/‎2026 was unexpected.
+
+TimeCreated      : 3/26/2026 1:12:05 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/26/2026 1:12:05 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/26/2026 10:18:14 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/26/2026 10:18:09 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff806e103f3b0, 0xfffff304e9e3e710, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032626-6359-01.dmp. Report Id: 39333bce-ccb8-427a-a7d6-9f8d5a6a0006.
+
+TimeCreated      : 3/26/2026 10:18:09 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/26/2026 10:18:09 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/26/2026 10:18:06 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/26/2026 10:18:04 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/26/2026 10:18:03 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/26/2026 10:18:10 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 10:01:40 AM on ‎3/‎26/‎2026 was unexpected.
+
+TimeCreated      : 3/26/2026 10:18:03 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/26/2026 10:18:03 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/26/2026 10:17:24 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.447.9.0) - Current Channel (Broad)
+
+TimeCreated      : 3/26/2026 10:12:10 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Update for Microsoft Defender Antivirus antimalware platform - KB4052623 (Version 
+                   4.18.26020.6) - Current Channel (Broad)
+
+TimeCreated      : 3/26/2026 10:01:44 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/26/2026 10:01:40 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x00000050 (0xffffcd0b5d02ae00, 0x0000000000000000, 0xfffff80197443698, 0x0000000000000002). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032626-7031-01.dmp. Report Id: 802dd81b-d07e-460a-98a0-1f75f21e11b5.
+
+TimeCreated      : 3/26/2026 10:01:40 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/26/2026 10:01:39 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/26/2026 10:01:37 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/26/2026 10:01:35 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/26/2026 10:01:33 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/26/2026 10:01:40 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 9:53:13 AM on ‎3/‎26/‎2026 was unexpected.
+
+TimeCreated      : 3/26/2026 10:01:33 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/26/2026 10:01:33 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/26/2026 2:27:10 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: 9PLJQ12FQ3CV-MicrosoftCorporationII.WinAppRuntime.Main.1.8
+
+TimeCreated      : 3/25/2026 10:03:49 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.447.3.0) - Current Channel (Broad)
+
+TimeCreated      : 3/25/2026 9:53:15 PM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 9:53:10 PM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x00000139 (0x0000000000000003, 0xffff85098889f600, 0xffff85098889f558, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032526-6390-01.dmp. Report Id: 7d5fb57e-3396-4dc7-83db-c3a550ae96e8.
+
+TimeCreated      : 3/25/2026 9:53:10 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 9:53:10 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 9:53:08 PM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 9:53:05 PM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/25/2026 9:53:04 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 9:53:11 PM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 9:47:24 PM on ‎3/‎25/‎2026 was unexpected.
+
+TimeCreated      : 3/25/2026 9:53:04 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 9:53:04 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/25/2026 11:47:28 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 11:47:23 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff80688f67c45, 0xffff908402c8e790, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032526-6546-01.dmp. Report Id: 471caf8f-84a2-480f-97f4-54ed1ef8c3df.
+
+TimeCreated      : 3/25/2026 11:47:23 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 11:47:23 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 11:47:21 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 11:47:18 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/25/2026 11:47:17 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 11:47:24 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 11:45:55 AM on ‎3/‎25/‎2026 was unexpected.
+
+TimeCreated      : 3/25/2026 11:47:17 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 11:47:17 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/25/2026 11:08:04 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: 2026-03 Update (KB5085516) (26200.8039)
+
+TimeCreated      : 3/25/2026 11:05:59 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 11:05:54 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 11:05:54 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 11:05:52 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 11:05:48 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 11:05:48 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was true. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 11:05:48 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/25/2026 11:05:33 AM
+Id               : 1074
+ProviderName     : User32
+LevelDisplayName : Information
+Message          : The process C:\WINDOWS\servicing\TrustedInstaller.exe (POWER_BOT_PC) has initiated the restart of computer POWER_BOT_PC on behalf of user NT AUTHORITY\SYSTEM for the 
+                   following reason: Operating System: Upgrade (Planned)
+                    Reason Code: 0x80020003
+                    Shutdown Type: restart
+                    Comment: 
+
+TimeCreated      : 3/25/2026 11:05:33 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 11:05:23 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff8073323797e, 0xfffff983a148e090, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032526-6812-02.dmp. Report Id: 76140e9b-5e27-4f94-b913-001dc9e43c09.
+
+TimeCreated      : 3/25/2026 11:05:23 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 11:05:22 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 11:05:20 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 11:05:18 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/25/2026 11:05:16 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 11:05:16 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 11:05:16 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/25/2026 11:05:55 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 10:34:30 AM on ‎3/‎25/‎2026 was unexpected.
+
+TimeCreated      : 3/25/2026 8:44:48 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.445.745.0) - Current Channel (Broad)
+
+TimeCreated      : 3/25/2026 8:34:34 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 8:34:30 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff8065cd2e3cf, 0xffff820a06e1dc40, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032526-6812-01.dmp. Report Id: f0e0ce9b-6eb9-4e97-a1b9-cf28c6c98883.
+
+TimeCreated      : 3/25/2026 8:34:30 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 8:34:29 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 8:34:27 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 8:34:25 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/25/2026 8:34:23 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 8:34:30 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 8:27:38 AM on ‎3/‎25/‎2026 was unexpected.
+
+TimeCreated      : 3/25/2026 8:34:23 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 8:34:23 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/25/2026 8:27:42 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 8:27:37 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff8073b9d79bd, 0xfffffe8ea690e090, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032526-6562-01.dmp. Report Id: e96d7b7f-1007-48dc-8b51-a17b315b8261.
+
+TimeCreated      : 3/25/2026 8:27:37 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 8:27:37 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 8:27:35 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 8:27:33 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/25/2026 8:27:31 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 8:27:38 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 8:17:37 AM on ‎3/‎25/‎2026 was unexpected.
+
+TimeCreated      : 3/25/2026 8:27:31 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 8:27:31 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/25/2026 8:17:41 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/25/2026 8:17:37 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000003b (0x00000000c0000005, 0xfffff806182ee3cf, 0xffffac035a07dc40, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032526-6671-01.dmp. Report Id: 657a67be-ae23-44d9-a55f-67764cf09df9.
+
+TimeCreated      : 3/25/2026 8:17:36 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/25/2026 8:17:36 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/25/2026 8:17:34 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/25/2026 8:17:32 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/25/2026 8:17:30 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/25/2026 8:17:37 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 7:58:34 AM on ‎3/‎25/‎2026 was unexpected.
+
+TimeCreated      : 3/25/2026 8:17:30 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/25/2026 8:17:30 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/24/2026 10:36:35 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: 9WZDNCRFJBMP-MICROSOFT.WINDOWSSTORE
+
+TimeCreated      : 3/24/2026 10:36:19 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.445.736.0) - Current Channel (Broad)
+
+TimeCreated      : 3/24/2026 9:09:29 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: 9PLJQ12FQ3CV-MicrosoftCorporationII.WinAppRuntime.Main.1.8
+
+TimeCreated      : 3/24/2026 9:09:13 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: 9PLJQ12FQ3CV-MicrosoftCorporationII.WinAppRuntime.Main.1.8
+
+TimeCreated      : 3/24/2026 5:28:52 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.445.732.0) - Current Channel (Broad)
+
+TimeCreated      : 3/24/2026 5:18:37 PM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/24/2026 5:18:32 PM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x00020001 (0x0000000000000011, 0x000000000021c9c9, 0x0000000000001004, 0xffffe70001205bf0). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032426-6640-01.dmp. Report Id: 8d6bf8dd-dca3-4082-8467-0b03e87f59d8.
+
+TimeCreated      : 3/24/2026 5:18:32 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/24/2026 5:18:32 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/24/2026 5:18:30 PM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/24/2026 5:18:28 PM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/24/2026 5:18:26 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/24/2026 5:18:33 PM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 4:53:44 PM on ‎3/‎24/‎2026 was unexpected.
+
+TimeCreated      : 3/24/2026 5:18:26 PM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/24/2026 5:18:26 PM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/24/2026 10:14:35 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.445.728.0) - Current Channel (Broad)
+
+TimeCreated      : 3/24/2026 8:13:48 AM
+Id               : 18
+ProviderName     : TPM
+LevelDisplayName : Information
+Message          : This event triggers the Trusted Platform Module (TPM) provisioning/status check to run.
+
+TimeCreated      : 3/24/2026 8:13:43 AM
+Id               : 1001
+ProviderName     : Microsoft-Windows-WER-SystemErrorReporting
+LevelDisplayName : Error
+Message          : The computer has rebooted from a bugcheck.  The bugcheck was: 0x00000154 (0xffffd681199d8000, 0xfffffb0aee80e5c0, 0x0000000000000001, 0x0000000000000000). A dump was 
+                   saved in: C:\WINDOWS\Minidump\032426-6437-01.dmp. Report Id: 0b117b94-ac58-4fc6-bb10-a8fba29a3729.
+
+TimeCreated      : 3/24/2026 8:13:43 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : VBS Key Isolation was started and will protect VSM-isolated keys.
+
+TimeCreated      : 3/24/2026 8:13:43 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-Wininit
+LevelDisplayName : Information
+Message          : Virtualization Based Security new timer creation status
+                   
+                   HRESULT: The operation completed successfully.
+                   New latch timer needed: false
+                   New latch timer waiting for system update completion: false
+                   Previous latch timer exists but disabled by registry: false
+                   Policy file exists: false
+                   
+
+TimeCreated      : 3/24/2026 8:13:41 AM
+Id               : 18
+ProviderName     : BTHUSB
+LevelDisplayName : Information
+Message          : Windows cannot store Bluetooth authentication codes (link keys) on the local adapter. Bluetooth keyboards might not work in the system BIOS during startup.
+
+TimeCreated      : 3/24/2026 8:13:39 AM
+Id               : 41
+ProviderName     : Microsoft-Windows-Kernel-Power
+LevelDisplayName : Critical
+Message          : The system has rebooted without cleanly shutting down first. This error could be caused if the system stopped responding, crashed, or lost power unexpectedly.
+
+TimeCreated      : 3/24/2026 8:13:37 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-General
+LevelDisplayName : Information
+Message          : The leap second configuration has been updated.
+                   Reason: Leap second data initialized from registry during boot
+                   Leap seconds enabled: true
+                   New leap second count: 0
+                   Old leap second count: 0
+
+TimeCreated      : 3/24/2026 8:13:44 AM
+Id               : 6008
+ProviderName     : EventLog
+LevelDisplayName : Error
+Message          : The previous system shutdown at 7:55:29 AM on ‎3/‎24/‎2026 was unexpected.
+
+TimeCreated      : 3/24/2026 8:13:37 AM
+Id               : 20
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : The last shutdown's success status was false. The last boot's success status was true.
+
+TimeCreated      : 3/24/2026 8:13:37 AM
+Id               : 18
+ProviderName     : Microsoft-Windows-Kernel-Boot
+LevelDisplayName : Information
+Message          : There are 0x1 boot options on this system.
+
+TimeCreated      : 3/24/2026 8:05:47 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.445.727.0) - Current Channel (Broad)
+
+TimeCreated      : 3/24/2026 5:10:24 AM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: 9PLJQ12FQ3CV-MicrosoftCorporationII.WinAppRuntime.Main.1.8
+
+TimeCreated      : 3/23/2026 9:04:45 PM
+Id               : 19
+ProviderName     : Microsoft-Windows-WindowsUpdateClient
+LevelDisplayName : Information
+Message          : Installation Successful: Windows successfully installed the following update: Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 
+                   1.445.720.0) - Current Channel (Broad)
+
+
+

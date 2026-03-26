@@ -1,0 +1,516 @@
+MASTER MAPPING: INTELLIGENT DATA BASE -> PRODUCTION
+File: Master Mapping Intelligent Data Base Production.txt
+Version: v1.1.0
+Date: 2026-03-25
+Timezone: Asia/Bangkok
+Status: Repo-aligned anti-deviation master map
+
+====================================================================
+1) PURPOSE OF THIS FILE
+====================================================================
+ไฟล์นี้ใช้เป็น master map กลางเพื่อกันหลงทางระหว่าง:
+- แนวคิดโปรเจกต์ที่ถูกล็อกไว้
+- สิ่งที่มีอยู่จริงใน repo Bot_Data_Basese
+- ช่องว่างที่ยังต้องทำก่อนถึง production
+
+กฎการใช้งาน:
+ทุกงานใหม่ต้องตอบให้ได้ 3 ข้อ
+1. งานนี้อยู่ layer ไหน
+2. งานนี้เพิ่มของที่มีอยู่จริง หรือแค่เพิ่ม spec
+3. งานนี้ลด gap production ตรงไหน
+
+====================================================================
+2) REPO SNAPSHOT ที่อิงอยู่จริง
+====================================================================
+Repo: tiumbj/Bot_Data_Basese
+Branch หลัก: main
+Top-level structure ที่มีอยู่จริง:
+- Local_LLM/
+- central_strategy_registry/
+- central_templates/
+- Master Mapping Intelligent Data Base Production.txt
+- central_bootstrap_report.json
+- central_bot_storage_bootstrap.py
+- project_locked.txt
+
+ข้อมูล bootstrap ปัจจุบัน:
+- version = v1.0.0
+- root = C:\Data\Bot
+- weekly_timeframes = M1, M5, M10, M15, H1, H4
+- path กลางที่ระบุแล้ว:
+  - central_market_data
+  - central_market_data_tf
+  - central_backtest_results
+  - central_strategy_registry
+  - local_llm_gold_research
+  - weekly_backtest_scope_config
+
+ข้อสำคัญ:
+weekly_timeframes ใน bootstrap ยังไม่เท่ากับ locked research TF ทั้งหมดของโปรเจกต์
+ดังนั้นห้ามตีความว่า weekly scope ปัจจุบัน = complete research coverage
+
+====================================================================
+3) LOCKED PROJECT TRUTH
+====================================================================
+จาก project_locked.txt และเอกสาร model ใน Local_LLM:
+
+เป้าหมายจริงของระบบ:
+สร้าง production-grade gold research + intelligent database platform สำหรับ XAUUSD/GOLD
+โดยมีแกนหลักดังนี้
+- test ทุก research timeframe ที่ล็อก
+- micro exit เป็น base layer บังคับ
+- classify market regime จากข้อมูลจริง
+- map regime -> timeframe -> entry -> exit -> TP/SL principle
+- สร้าง winner registry และ approved package
+- ให้ downstream bot / MT5 query ข้อมูลจากฐานกลาง
+- มี weekly intelligence loop สำหรับ relabel / rerank / refresh
+
+Locked research TF:
+- M1
+- M2
+- M3
+- M4
+- M5
+- M6
+- M10
+- M15
+- M30
+- H1
+- H4
+- D1
+
+กฎห้ามเบี่ยง:
+- ห้ามลดระบบเหลือแค่ bot ยิง order
+- ห้ามใช้ VectorBT เป็น production core
+- ห้ามข้าม micro exit
+- ห้ามวิจัยเฉพาะ TF ที่สะดวก
+- ห้าม promote strategy โดยไม่มี registry / approval flow
+- ห้ามให้ bot สร้าง truth เองนอกฐานข้อมูลกลาง
+
+====================================================================
+4) REPO-TO-ARCHITECTURE MASTER MAPPING
+====================================================================
+
+LAYER A - CANONICAL MARKET DATA LAYER
+หน้าที่:
+- เก็บข้อมูลราคากลางจาก source เดียว
+- สร้าง multi-timeframe datasets ที่เทียบกันได้
+- เป็นฐานให้ backtest / feature / runtime ใช้ข้อมูลชุดเดียวกัน
+
+สิ่งที่มีอยู่จริงใน repo:
+- central_bot_storage_bootstrap.py
+- Local_LLM/build_multitimeframe_dataset.py
+- Local_LLM/update_mt5_central_dataset.py
+- central_bootstrap_report.json
+
+ประเมินสถานะ:
+- IMPLEMENTED FOUNDATION
+- มี path กลางและ data-root direction ชัด
+- มี bootstrap/report ใช้เป็น canonical root map ได้
+
+ช่องว่าง:
+- ยังต้องยืนยัน integrity automation ให้ครบ
+- ยังต้องมี dataset versioning ที่ใช้งานเป็น routine
+- weekly_timeframes ใน bootstrap ยังไม่ครอบ research TF ทั้งหมด
+
+Production checkpoint:
+- source กลางตัวเดียว
+- multi-TF dataset reproducible
+- integrity check ผ่าน
+- versioned snapshot ใช้ย้อนหลังได้
+
+
+LAYER B - FEATURE / LABEL / REGIME INTELLIGENCE LAYER
+หน้าที่:
+- คำนวณ feature กลาง
+- สร้าง regime labels
+- สร้าง outcome labels
+- รองรับ retrieval / similar-case / runtime feature access
+
+สิ่งที่มีอยู่จริงใน repo:
+- Local_LLM/build_base_feature_cache.py
+- Local_LLM/intelligent_database_platform_master_model_v1_2_0.txt
+- phase/spec files กลุ่ม intelligent_database_platform_phase_a2 ถึง a18
+- Local_LLM/intelligent_db_bot_split_model_v1_1_0.txt
+
+ประเมินสถานะ:
+- SPEC STRONG / RUNTIME WEAK
+- direction ชัดมาก
+- แต่ feature runtime ยังไม่ถือว่า operational
+
+ข้อเท็จจริงสำคัญ:
+- build_base_feature_cache.py มีอยู่จริงใน repo
+- แต่ใน master map ต้องถือว่าเป็น gap จนกว่าจะยืนยันว่า pipeline นี้ใช้งานได้จริง end-to-end
+
+ช่องว่าง:
+- feature schema กลางยังต้อง lock ในรูป operational
+- label generation / regime runtime ยังไม่เห็นเป็น service หรือ recurring job
+- retrieval layer ยังเป็น architecture/spec มากกว่าระบบใช้งานจริง
+
+Production checkpoint:
+- feature cache build ได้จริง
+- schema lock ชัด
+- regime labels reproducible
+- outcome labels query ได้เร็ว
+- retrieval contract ใช้งานจริง
+
+
+LAYER C - RESEARCH / BACKTEST ENGINE LAYER
+หน้าที่:
+- สร้าง backtest evidence จำนวนมาก
+- test strategy families ข้ามทุก TF ที่ล็อก
+- บังคับ micro exit coverage
+- รองรับ OOS / walk-forward / robustness / regime split
+
+สิ่งที่มีอยู่จริงใน repo:
+- Local_LLM/gold_research/
+- Local_LLM/run_full_discovery_campaign.py
+- Local_LLM/ema_grid_backtest_optimizer.py
+- Local_LLM/gold_research_bootstrap.py
+- project conversation.txt
+- Project model locked
+
+ประเมินสถานะ:
+- ACTIVE RESEARCH FOUNDATION
+- research direction หนาแน่นและจริงจัง
+- มีทั้ง execution script, bootstrap, optimizer, และ conversation lock
+
+ข้อสำคัญ:
+- repo นี้เก็บ research core และ specification direction จำนวนมาก
+- แต่สิ่งที่ “complete production-ready” ต้องวัดจาก coverage จริง, registry output จริง, และ recurring execution จริง
+
+ช่องว่าง:
+- ต้องยืนยัน cross-timeframe coverage ให้ครบตาม lock
+- ต้องยืนยัน micro exit mandatory matrix ในระดับ evidence
+- ต้องยืนยัน reject reasons / promotion rules / standardized metrics packs
+
+Production checkpoint:
+- full TF coverage ครบ M1..D1
+- micro exit ทุก TF
+- metrics pack มาตรฐาน
+- promotion/rejection evidence กลาง
+
+
+LAYER D - STRATEGY REGISTRY / APPROVAL LAYER
+หน้าที่:
+- เก็บสถานะ strategy package
+- แยก candidate / approved / deprecated
+- เป็น gate ก่อน downstream bot ใช้งานจริง
+
+สิ่งที่มีอยู่จริงใน repo:
+- central_strategy_registry/
+- central_strategy_registry/manifests/
+- central_strategy_registry/README.txt
+
+ข้อเท็จจริงจาก README:
+- candidates = strategy ที่ยังอยู่ระหว่างประเมิน
+- approved = strategy ที่ผ่านเกณฑ์และ bot อื่นโหลดได้
+- deprecated = strategy ที่เลิกใช้
+- มาตรฐานต่อ package:
+  - strategy_spec.json
+  - approved_parameters.json
+  - validation_report.json
+  - deployment_contract.json
+
+ประเมินสถานะ:
+- OPERATIONAL DIRECTION EXISTS
+- โครง registry ถูกนิยามไว้ดีและตรงกับ production concept
+
+ช่องว่าง:
+- ต้องยืนยันว่า manifests และ package lifecycle ถูกใช้งานจริงทุกสัปดาห์
+- ต้องมี promotion/demotion logic ที่เขียนเป็นกฎกลางชัด
+- ต้องเชื่อม registry กับ research outputs อัตโนมัติให้มากขึ้น
+
+Production checkpoint:
+- approved registry query ได้จริง
+- demotion/promotion rules ชัด
+- publishable manifests พร้อม downstream consumer
+
+
+LAYER E - TEMPLATE / CONTRACT LAYER
+หน้าที่:
+- ทำให้ทุกผลลัพธ์และ package ใช้ schema เดียวกัน
+- ลดการเบี่ยงรูปแบบข้อมูลระหว่างทีม/สคริปต์
+
+สิ่งที่มีอยู่จริงใน repo:
+- central_templates/backtest_result/
+- central_templates/strategy_package/
+
+ประเมินสถานะ:
+- IMPORTANT FOUNDATION
+- เป็นตัวกลางสำคัญสำหรับ standardization
+
+ช่องว่าง:
+- ต้องยืนยันว่า template ถูกใช้จริงใน pipeline ไม่ใช่แค่เก็บไว้
+- ต้อง map template -> registry -> runtime contract ให้ครบ
+
+Production checkpoint:
+- output ทุกชนิดผ่าน template กลาง
+- package และ backtest result validate ได้
+- downstream อ่าน schema เดียวกันได้ทั้งหมด
+
+
+LAYER F - INTELLIGENT DATABASE CORE
+หน้าที่:
+- รับผลจาก backtest / feature / labels / registry
+- query current approved packages / regimes / policy / similar cases
+- เป็นสมองกลางที่ downstream bot ใช้จริง
+
+สิ่งที่มีอยู่จริงใน repo:
+- Local_LLM/intelligent_database_platform_master_model_v1_2_0.txt
+- phase specs A2-A18
+- Local_LLM/intelligent_db_bot_split_model_v1_1_0.txt
+
+ประเมินสถานะ:
+- ARCHITECTURE-READY / IMPLEMENTATION-INCOMPLETE
+- concept แข็งแรงมาก
+- แต่ยังไม่ควรถือว่า runtime service พร้อมใช้งานจนกว่าจะมี ingestion + query + health check จริง
+
+ช่องว่าง:
+- ingestion jobs ยังต้องยืนยัน
+- DuckDB / Parquet operational query path ยังต้องยืนยันจาก runtime จริง
+- similar-case retrieval ยังเป็นชั้น design/spec เป็นหลัก
+
+Production checkpoint:
+- ingest ได้จริงจาก central_backtest_results
+- query latency ใช้งานจริงได้
+- versioning / retention policy ชัด
+- service contract สำหรับ bot ชัด
+
+
+LAYER G - REALTIME SIGNAL / BOT CONSUMER LAYER
+หน้าที่:
+- poll ตลาด 2-5 วินาที
+- อัปเดต realtime features
+- โหลด active winners / policies จาก intelligent DB
+- rank / dedup / conflict-resolve signals
+
+สิ่งที่มีอยู่จริงใน repo:
+- มีผ่าน concept และ split-model docs
+- ยังไม่เห็นเป็น runtime complete layer ใน repo นี้
+
+ประเมินสถานะ:
+- CONCEPT EXISTS / FULL RUNTIME NOT YET IN REPO SNAPSHOT
+
+ช่องว่าง:
+- realtime feature update service
+- multi-winner scan runtime
+- score normalization
+- conflict resolution
+- cooldown / exposure guard
+
+Production checkpoint:
+- query intelligent DB ได้จริง
+- scan ได้ทุก 2-5 วินาที
+- conflict resolve มีกฎชัด
+- downstream signal contract คงที่
+
+
+LAYER H - MT5 EXECUTION / FEEDBACK LAYER
+หน้าที่:
+- รับ approved signal
+- ส่งคำสั่งเข้า MT5
+- track position / exits / failures
+- ส่ง execution logs กลับฐานกลาง
+
+สิ่งที่มีอยู่จริงใน repo:
+- update_mt5_central_dataset.py ชี้ว่ามีสะพานเชื่อมข้อมูล MT5 ด้าน data update
+- แต่ execution layer เต็มยังไม่ใช่ส่วนที่ complete ใน repo นี้
+
+ประเมินสถานะ:
+- PARTIAL BRIDGE ONLY
+
+ช่องว่าง:
+- live order route
+- position/execution reconciliation
+- failure recovery
+- closed-loop feedback กลับ registry/intelligent DB
+
+Production checkpoint:
+- approved signal -> MT5 route
+- execution logs กลับฐานกลาง
+- exit behavior ตรงกับ policy
+- retry / recovery มีกฎชัด
+
+
+LAYER I - WEEKLY INTELLIGENCE LOOP
+หน้าที่:
+- rerun research
+- relabel / rerank
+- refresh approved registry
+- demote deteriorated strategies
+- publish new weekly snapshot
+
+สิ่งที่มีอยู่จริงใน repo:
+- central_bootstrap_report.json มี weekly paths และ weekly_backtest_scope_config path
+- Local_LLM/run_full_discovery_campaign.py
+- central_strategy_registry structure
+
+ประเมินสถานะ:
+- CLEAR DIRECTION, PARTIAL OPERATIONAL READINESS
+
+ช่องว่าง:
+- orchestration ต้องยืนยัน end-to-end
+- publish loop ต้องยืนยันว่าเชื่อม research -> registry -> runtime
+- drift / degradation reporting ต้องชัด
+
+Production checkpoint:
+- weekly rerun จริง
+- weekly rerank จริง
+- weekly approved package publish จริง
+- audit trail ย้อนหลังได้
+
+====================================================================
+5) WHAT IS REAL NOW vs WHAT IS STILL SPEC
+====================================================================
+
+ของที่ถือว่า "มีอยู่จริงใน repo และใช้เป็นหลักอ้างอิงได้ทันที"
+- central_bot_storage_bootstrap.py
+- central_bootstrap_report.json
+- Local_LLM/build_multitimeframe_dataset.py
+- Local_LLM/update_mt5_central_dataset.py
+- Local_LLM/run_full_discovery_campaign.py
+- Local_LLM/ema_grid_backtest_optimizer.py
+- Local_LLM/gold_research_bootstrap.py
+- Local_LLM/intelligent_database_platform_master_model_v1_2_0.txt
+- phase spec files A2-A18
+- central_strategy_registry/README.txt
+- central_templates/*
+- project_locked.txt
+- Master Mapping Intelligent Data Base Production.txt
+
+ของที่ถือว่า "spec/model/document เป็นหลัก ยังไม่ควรนับเป็น production runtime จนกว่าจะยืนยัน"
+- intelligent database service runtime เต็มระบบ
+- similar-case retrieval runtime
+- realtime signal engine เต็มวงจร
+- MT5 execution feedback loop แบบปิดครบ
+- feature/label/regime runtime ที่เป็น recurring production jobs ทั้งสาย
+
+====================================================================
+6) CURRENT GAPS THAT MATTER MOST
+====================================================================
+Gap 1 - Research coverage truth ยังต้องยืนยันให้ครบตาม locked TF
+Gap 2 - Feature/label/regime runtime ยังไม่ operational ชัดเท่าฝั่ง data/research
+Gap 3 - Intelligent DB runtime ยังหนักไปทาง spec มากกว่าบริการ query ที่ใช้งานจริง
+Gap 4 - Registry automation ยังต้องยืนยัน weekly promotion/demotion flow
+Gap 5 - Realtime consumer + MT5 execution closed loop ยังไม่ครบใน repo snapshot นี้
+Gap 6 - Weekly scope ใน bootstrap ยังไม่สะท้อน full mandatory TF universe
+
+====================================================================
+7) PRODUCTION ORDER OF EXECUTION
+====================================================================
+ให้ยึดลำดับนี้เพื่อลดการหลงทาง
+
+Step 1 - Canonical data truth
+- ยืนยัน source กลาง
+- ยืนยัน multi-TF dataset
+- ยืนยัน integrity + versioning
+
+Step 2 - Research evidence truth
+- ยืนยัน mandatory TF coverage
+- ยืนยัน micro exit coverage
+- ยืนยัน standardized metrics + reject reasons
+
+Step 3 - Registry truth
+- research outputs ต้อง map เข้า candidate/approved/deprecated ได้จริง
+- manifests และ contracts ต้อง publish ได้จริง
+
+Step 4 - Feature / label truth
+- build feature cache ให้ operational
+- lock feature schema / label schema
+- สร้าง queryable stores
+
+Step 5 - Intelligent DB runtime truth
+- ingest research + feature + registry เข้า DB กลาง
+- ยืนยัน query path ที่ bot ใช้จริง
+
+Step 6 - Realtime and MT5 loop truth
+- bot query DB
+- signal engine ประเมินตาม policy กลาง
+- MT5 ส่งผล execution กลับเข้า DB
+
+Step 7 - Weekly intelligence truth
+- rerun / rerank / refresh / demote / publish เป็น routine
+
+====================================================================
+8) ANTI-DEVIATION DECISION RULES
+====================================================================
+ก่อนทำงานใด ๆ ให้เช็คตามนี้
+
+Rule 1
+ถ้างานนั้นไม่เพิ่มความชัดของ central platform layer ใด layer หนึ่ง
+=> อย่าทำก่อน
+
+Rule 2
+ถ้างานนั้นสร้างไฟล์ใหม่แต่ไม่เชื่อมกับ registry / template / canonical path
+=> เสี่ยงหลงทาง
+
+Rule 3
+ถ้างานนั้นทำให้ bot ตัดสินเองโดยไม่ query จากฐานกลาง
+=> ผิดทิศทาง
+
+Rule 4
+ถ้างานนั้นข้าม micro exit หรือข้าม TF บางตัวที่ล็อก
+=> ผิด project truth
+
+Rule 5
+ถ้างานนั้นอ้างว่า production-ready แต่ยังเป็นแค่ spec txt
+=> ห้ามนับเป็น runtime completion
+
+Rule 6
+ถ้างานนั้นเพิ่ม research quantity แต่ไม่เพิ่ม standardized evidence / promotion logic
+=> ยังไม่ถือว่าปิด production gap
+
+====================================================================
+9) MASTER STATUS BOARD
+====================================================================
+A. Canonical Data Layer
+- Status: foundation exists
+- Confidence: medium-high
+
+B. Feature / Label / Regime Layer
+- Status: direction strong, runtime incomplete
+- Confidence: medium
+
+C. Research / Backtest Engine
+- Status: active and substantial
+- Confidence: medium-high
+
+D. Registry / Approval Layer
+- Status: structure exists, needs operational automation
+- Confidence: medium
+
+E. Template / Contract Layer
+- Status: exists and important
+- Confidence: medium-high
+
+F. Intelligent Database Core
+- Status: architecture strong, runtime incomplete
+- Confidence: medium
+
+G. Realtime Signal Consumer
+- Status: not fully present in repo snapshot
+- Confidence: low-medium
+
+H. MT5 Execution Feedback
+- Status: partial bridge only
+- Confidence: low-medium
+
+I. Weekly Intelligence Loop
+- Status: direction exists, full loop not yet proven end-to-end
+- Confidence: medium
+
+====================================================================
+10) SHORT FINAL TRUTH
+====================================================================
+โปรเจกต์นี้ต้องถูกมองแบบนี้เท่านั้น:
+
+- Bot_Data_Basese = ศูนย์กลางโครงสร้างข้อมูล + registry + template + architecture contract
+- Local_LLM = research/spec/bootstrap/workflow core
+- central_strategy_registry = gate ของ strategy lifecycle
+- central_templates = มาตรฐาน schema/output
+- intelligent database = สมองกลางที่ยังต้องทำ runtime ให้สมบูรณ์
+- bot / MT5 = downstream consumer และ execution layer
+
+สรุปสั้นที่สุด:
+"ห้ามหลงว่า repo นี้คือแค่ bot trade repo; ความจริงมันคือฐานกลางของ data + research + registry + intelligent-database direction ที่ต้องถูกปิด gap ไปจนเป็น production platform เต็มรูปแบบ"

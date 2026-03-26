@@ -16,6 +16,7 @@ cbr/
 
 central_backtest_results/
 central_feature_cache/
+central_feature_cache_backups/
 central_market_data/
 central_strategy_registry/candidates/
 
