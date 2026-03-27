@@ -1,0 +1,495 @@
+from pathlib import Path
+
+src = Path("C:/Data/Bot/PROJECT_PROGRESSION_CHECKLIST_v1_0_1.txt")
+text = src.read_text(encoding="utf-8")
+
+section_n = r"""
+====================================================================
+N) ARCHITECTURE DIRECTION VS CURRENT PRIORITY
+====================================================================
+
+PROJECT_PROGRESSION_CHECKLIST.txt
+Version: v1.0.0
+Date: 2026-03-27
+Timezone: Asia/Bangkok
+Purpose: ใช้เตือน AI ก่อนเปลี่ยน chat และก่อนเริ่มงานใหม่ เพื่อกัน deviation from the master plan
+
+====================================================================
+A) HOW TO USE THIS FILE
+====================================================================
+ก่อนเริ่มงานใหม่ หรือก่อนย้ายไป chat ใหม่
+AI ต้องอ่านไฟล์นี้ก่อน แล้วตอบตามหัวข้อ B และ C ให้ครบ
+ถ้าตอบไม่ได้ครบ = ห้ามเริ่มงาน
+
+กฎสูงสุด:
+งานใหม่จะถือว่า valid ก็ต่อเมื่อมันขยับ gate ที่ยัง OPEN ให้เข้าใกล้ CLOSED เท่านั้น
+ห้ามนับ spec, mapping, doc, runner monitoring, หรือจำนวนไฟล์ ว่าเท่ากับ production progress
+
+====================================================================
+B) CURRENT PROJECT POSITION
+====================================================================
+Project:
+Local_LLM / gold_research / Intelligent Data Base Production
+
+Current chain ที่ต้องยึด:
+CANONICAL DATA -> RESEARCH EVIDENCE -> REGISTRY -> FEATURE/LABEL RUNTIME -> INTELLIGENT DB -> DOWNSTREAM BOT
+
+Current recovery sequence ที่ห้ามหลุด:
+1. Truth Gate
+2. Seed Manifest
+3. VT full-run on seed set only
+4. Standardized result pack
+5. Candidate registry publish
+6. Feature/label runtime closure
+7. Intelligent DB runtime
+8. Downstream bot integration
+
+Anything outside this sequence = DEVIATION
+
+Current position now:
+- อยู่ในช่วง Controlled Execution / Gate 4 preparation
+- Truth Gate มีแล้ว
+- Seed Manifest เป็น required stage แล้ว
+- controlled execution path เริ่มมี evidence จริงแล้ว
+- แต่ยัง NOT production-closed เพราะ execution runner ยังต้องปิด resume-safe recovery ให้จริง
+- standardized result pack และ downstream registry publish ยังเป็น gate ที่ต้องปิดต่อ
+
+สิ่งที่มีจริงแล้ว:
+- canonical root/path structure exists
+- central bootstrap exists
+- multi-timeframe dataset direction exists
+- research/backtest runners exist
+- truth gate exists
+- seed-manifest stage is required
+- central registry direction exists
+- project lock / mapping / conversation lock exists
+
+สิ่งที่ยังเป็น production gap:
+- full canonical dataset integrity automation
+- reproducible versioned research snapshots
+- standardized evidence truth across all locked TF
+- registry auto-publish gate from research outputs
+- feature schema lock in operational form
+- label generation runtime
+- regime labeling runtime
+- intelligent DB retrieval/runtime service
+- MT5 closed-loop feedback integration
+- true resume-safe execution runner with deterministic restart recovery
+
+====================================================================
+C) AI MUST ANSWER THIS BEFORE ANY NEW TASK
+====================================================================
+1) TASK NAME:
+2) LAYER:
+3) RUNNER CLASS:
+4) INPUT TRUTH:
+5) OUTPUT TRUTH:
+6) GAP CLOSED:
+7) NEXT GATE:
+8) ALLOWED NEXT STEP:
+9) NOT ALLOWED:
+10) WHY THIS TASK MOVES PRODUCTION FORWARD:
+
+ถ้าข้อใดข้อหนึ่งตอบไม่ได้ชัด = ห้ามเริ่มงาน
+
+====================================================================
+D) LOCKED NON-NEGOTIABLE RULES
+====================================================================
+Locked research timeframe universe:
+M1, M2, M3, M4, M5, M6, M10, M15, M30, H1, H4, D1
+
+Locked rules:
+- ห้ามลดระบบเหลือแค่ bot ยิง order
+- ห้ามใช้ VectorBT เป็น production core
+- ห้ามข้าม micro exit
+- ห้ามวิจัยเฉพาะ TF ที่สะดวก
+- ห้าม promote strategy โดยไม่มี registry / approval flow
+- ห้ามให้ bot สร้าง truth เองนอกฐานข้อมูลกลาง
+- ห้ามนับ spec/document ว่าเท่ากับ runtime completion
+- execution TF ต้องแยกจาก research TF
+- backtest core ต้องเป็น custom + controllable
+- intelligent database ต้องเป็นระบบกลาง และ bot runtime เป็น client ของมัน
+- เป้าหมายคือ profit + survivability ไม่ใช่ zero-trade perfection
+
+====================================================================
+E) RUNNER GOVERNANCE
+====================================================================
+Runner ทุกตัวต้องถูกจัด class ก่อนใช้:
+
+Class 1: Preflight / orchestration runner
+Allowed:
+- manifest scan
+- support validation
+- state / progress / debug
+Not allowed:
+- ห้ามอ้างเป็น production backtest truth
+- ห้ามอ้างเป็น final evidence source ด้วยตัวเอง
+
+Class 2: Execution / backtest runner
+Allowed:
+- run research execution on approved input set
+- generate evidence rows
+Not allowed:
+- ห้ามถือเป็น production core ของ final bot
+- ห้ามแทน registry หรือ intelligent DB
+
+Class 3: Legacy / exploratory / temporary runner
+Allowed:
+- local tests
+- debugging
+Not allowed:
+- ห้าม promote เป็น standard
+- ห้ามใช้เป็น evidence baseline
+
+Hard rule:
+If runner is untagged = DO NOT RUN
+
+====================================================================
+F) GATES THAT MUST PASS IN ORDER
+====================================================================
+GATE 1 - CANONICAL DATA GATE
+Pass only if:
+- all locked TF datasets exist
+- integrity checks pass
+- source/version is recorded
+
+GATE 2 - RESEARCH EVIDENCE TRUTH GATE
+Pass only if:
+- coverage_by_timeframe exists
+- micro_exit_coverage_matrix exists
+- kill_stage_summary exists
+- standardized_metrics_pack exists
+- recommendation is explicit
+
+GATE 3 - SEED MANIFEST GATE
+Pass only if:
+- truth_gate_seed_manifest.csv exists
+- truth_gate_seed_manifest.jsonl exists
+- eligible TFs are explicit
+- blocked killer-layer rows are excluded
+- recommendation says ALLOW_VT_FULL_RUN_ON_SEED_SET
+
+GATE 4 - EXECUTION EVIDENCE GATE
+Pass only if:
+- execution uses seed manifest, not full universe blindly
+- result pack is standardized
+- reject/error/missing-feature reasons are explicit
+- runner is resume-safe after kill/shutdown/restart
+- same-outdir restart works
+- completed work is skipped
+- result is not duplicated
+- recovery metrics are visible
+
+GATE 5 - REGISTRY PUBLISH GATE
+Pass only if:
+- outputs are promoted into candidate registry automatically
+- approval rules are applied centrally
+- downstream packages can be built from approved truth only
+
+GATE 6 - FEATURE/LABEL/RUNTIME GATE
+Pass only if:
+- shared features are queryable
+- regime/label generation is recurring and reproducible
+
+GATE 7 - INTELLIGENT DB DEPLOYMENT GATE
+Pass only if:
+- retrieval contract exists
+- human and bot consume same truth
+- execution feedback can be reattached to source intelligence
+
+====================================================================
+G) WHAT MUST STOP IMMEDIATELY
+====================================================================
+- stop counting number of scripts as progress
+- stop opening full-universe run before truth gate + seed manifest
+- stop treating weekly scope as complete locked research coverage
+- stop promoting runner versions without runner class and gate purpose
+- stop mixing monitoring fixes with production truth claims
+- stop using storage-heavy runs without cleanup plan
+- stop building new spec files before current gate is closed
+- stop using wrapper/watchdog as final answer for execution truth
+- stop using per-attempt outdir fragmentation as promoted recovery model
+
+====================================================================
+H) ROOT CAUSE TO REMEMBER
+====================================================================
+Root cause summary:
+1. ไม่มี single operational spine ที่บังคับให้ทุกงานปิด production gap ก่อนขยับไป layer ถัดไป
+2. ปนกันระหว่าง runtime truth กับ spec / mapping / plan
+3. research quantity โตเร็วกว่า research truth
+4. orchestration ถูกใช้แก้ปัญหาเฉพาะหน้า แต่ยังไม่ลดเหลือ production execution path เดียว
+5. visibility ต่ำ ทำให้ไม่ชัดว่างานที่รันอยู่เป็น preflight, execution, summary, runtime production หรือ spec scaffolding
+6. weekly scope, bootstrap scope, และ locked research universe ยังไม่เท่ากัน
+7. feature / label / regime layer ยัง weak ใน runtime
+8. registry flow ยังไม่เป็น hard gate กลาง
+
+Locked execution root cause:
+RC-EXEC-RESUME-001:
+Execution runner lacks resume-safe state and deterministic restart recovery.
+
+Meaning:
+ถ้า execution runner ยัง resume-safe ไม่ได้หลัง kill / shutdown / restart
+ถือว่ายังไม่ผ่าน production execution standard
+
+====================================================================
+I) CURRENT PRIORITY: WHAT MUST BE DONE NEXT
+====================================================================
+Current most important task:
+Build promoted resume-safe execution runner
+
+TASK NAME:
+Build promoted resume-safe execution runner
+
+LAYER:
+Layer B - Research Evidence Truth
+
+RUNNER CLASS:
+Class 2 - Execution / backtest runner
+
+INPUT TRUTH:
+- truth gate decision
+- truth_gate_seed_manifest.csv / jsonl
+- canonical dataset
+- locked 12 TF universe
+- current controlled seed execution assumptions
+
+OUTPUT TRUTH:
+- single execution runner that is truly resume-safe
+- standardized controlled execution result pack
+- recovery metrics readable after restart
+
+GAP CLOSED:
+- RC-EXEC-RESUME-001
+- RC-EXEC-HANG-002 (ส่วนที่เกี่ยวกับ recovery path)
+- RC-GOV-EXEC-003 (execution governance side)
+
+NEXT GATE:
+Gate 4 - Execution Evidence Gate
+
+ALLOWED NEXT STEP:
+- run controlled seed execution on new promoted runner
+- produce standardized result pack
+- then publish candidate registry
+
+NOT ALLOWED:
+- ใช้ watchdog wrapper เป็น final answer
+- promote v1.0.8 as final runner
+- เปิด full-universe run
+- นับ monitoring improvement ว่าเท่ากับ production closure
+- ไปทำ spec ใหม่ก่อนปิด execution gap
+
+Why this is the current priority:
+เพราะ mapping ล็อกไว้แล้วว่า
+No new work is valid unless it clearly moves one existing gate from OPEN -> CLOSED
+
+====================================================================
+J) REQUIRED ACCEPTANCE TEST FOR EXECUTION RUNNER
+====================================================================
+Acceptance test must be this exact sequence:
+1. เริ่มรัน shard / job จริง
+2. ปล่อยให้ทำงานจริงบางส่วน
+3. kill process
+4. restart ด้วย outdir เดิม และ shard เดิม
+5. ตรวจว่า:
+   - completed work ถูก skip
+   - progress ไม่ reset
+   - result ไม่ duplicate
+   - ไม่ต้อง merge manual
+   - recovery metrics รายงานถูกต้อง
+
+Required recovery observability:
+- resumed_groups
+- resumed_jobs
+- skipped_completed_groups
+- skipped_completed_jobs
+- recovery_start_time
+- recovery_status
+
+Recovery model rules:
+- restart must use same outdir
+- restart must use same shard arguments
+- ห้ามใช้ per-attempt outdir เป็น promoted recovery model หลัก
+
+====================================================================
+K) PROJECT PROGRESSION CHECKLIST
+====================================================================
+Phase 0 - Concept Lock
+[ ] research TF = M1,M2,M3,M4,M5,M6,M10,M15,M30,H1,H4,D1
+[ ] execution TF separated from research TF
+[ ] micro exit = mandatory base layer
+[ ] backtest core = custom + controllable
+[ ] intelligent database = central system
+[ ] goal = profit + survivability
+
+Phase 1 - Canonical Data Ready
+[ ] single central source path
+[ ] all TF created
+[ ] parquet cache complete for all TF
+[ ] integrity checks pass
+[ ] dataset versioned
+
+Phase 2 - Feature / Label Foundation
+[ ] base feature cache implemented
+[ ] feature schema locked
+[ ] regime labels defined
+[ ] trade outcome labels defined
+[ ] feature generation reproducible
+
+Phase 3 - Research Engine Expansion
+[ ] weekly scope covers mandatory research TF
+[ ] entry families covered
+[ ] micro exit tested on every TF
+[ ] OOS / walk-forward integrated
+[ ] metrics pack standardized
+[ ] reject reason logging complete
+
+Phase 4 - Winner Registry
+[ ] strategy registry schema finalized
+[ ] approved package manifest works
+[ ] winner ranking logic centralized
+[ ] promotion/demotion policy defined
+[ ] package versioning complete
+
+Phase 5 - Intelligent Database Runtime
+[ ] ingestion pipeline from backtest results into DB
+[ ] feature store query is fast
+[ ] label store query is fast
+[ ] winner registry query is fast
+[ ] DuckDB layer usable
+[ ] Qdrant / similar-case retrieval usable
+[ ] service API contract finalized
+
+Phase 6 - Realtime Decision Layer
+[ ] market polling 2-5 seconds
+[ ] realtime feature update
+[ ] multi-winner scan
+[ ] signal normalization
+[ ] conflict resolution
+[ ] signal ranking
+[ ] cooldown / exposure guard
+
+Phase 7 - MT5 Execution Integration
+[ ] approved signal -> MT5 order route
+[ ] position tracking
+[ ] micro exit live control
+[ ] execution logging back to central DB
+[ ] failure recovery / retry policy
+
+Phase 8 - Weekly Intelligence Loop
+[ ] weekly relabel
+[ ] weekly rerank
+[ ] winner refresh
+[ ] loser demotion
+[ ] approved package refresh
+
+====================================================================
+L) FILE-TO-ARCHITECTURE REMINDER
+====================================================================
+Data foundation:
+- central_bot_storage_bootstrap.py
+- build_multitimeframe_dataset.py
+- build_parquet_tf_dataset_cache.py
+
+Research engine / jobs:
+- locked_backtest_engine.py
+- weekly_central_backtest_runner.py
+- build_locked_research_signal_package.py
+- build_entry_v2_component_packages.py
+- build_micro_exit_v2_component_packages.py
+
+EMA research:
+- ema_grid_backtest_optimizer.py
+
+Intelligent DB spec/model:
+- intelligent_database_platform_master_model_v1_2_0.txt
+- phase/spec files for intelligent database
+
+Known clear gap:
+- build_base_feature_cache.py is still a major feature-layer gap
+
+====================================================================
+M) CHAT HANDOFF TEMPLATE
+====================================================================
+Paste this before changing chat:
+
+CURRENT PROJECT POSITION
+- Phase:
+- Current Gate:
+- Current Layer:
+- Runner Class:
+- Current Allowed Sequence Step:
+- Current Production Gap:
+- Last Proven Reality:
+- What is CLOSED:
+- What is still OPEN:
+- Exact Next Task:
+- Why this task is next:
+- Not Allowed:
+- Required evidence after completion:
+
+Example rule:
+If the next task does not move one OPEN gate closer to CLOSED, do not start it.
+
+END OF FILE
+
+====================================================================
+N) ARCHITECTURE DIRECTION VS CURRENT PRIORITY
+====================================================================
+Reference architecture direction from external analysis:
+- Data layer: Parquet + Zstd + time partitioning
+- Read path: Polars scan_parquet() / Lazy execution
+- Memory layout: Arrow / NumPy friendly columnar path
+- Simulation core: custom Numba kernel
+- Parallel orchestration: separated from execution core
+- Aggregation: Polars
+- Future scale option: distributed orchestration such as Ray
+- Future search option: adaptive search such as Optuna
+
+What is ACCEPTED from that analysis:
+- production-grade backtest core should be custom + controllable
+- vectorized preprocessing is useful for feature prep
+- execution logic should control state explicitly
+- path-dependent trade logic should not rely on simple matrix shortcuts
+- orchestration layer should be separated from execution layer
+- data loading should prefer lazy/scannable paths over repeated eager full loads
+
+What is NOT the current next action:
+- do not rewrite the whole system around Ray now
+- do not introduce Optuna as the current main task
+- do not replace current roadmap with HPC architecture work
+- do not treat performance architecture as production closure
+- do not start engine rewrite before Gate 4 is closed
+
+Current priority remains:
+- close Gate 4 execution evidence correctly
+- execution must use seed manifest only
+- result pack must be standardized
+- reject/error/missing-feature reasons must be explicit
+- promoted execution runner must be truly resume-safe
+- restart with same outdir must skip completed work
+- recovery metrics must be visible and reliable
+
+Why:
+- current blocker is execution truth and recovery truth
+- current blocker is NOT raw compute speed alone
+- HPC scale without resume-safe recovery will amplify instability, not solve it
+- architecture improvements are valid only when they do not derail the gate sequence
+
+Decision rule:
+If a proposed technical improvement does not move an OPEN gate closer to CLOSED,
+then it is architecture research only, not the current execution priority.
+
+"""
+
+if "N) ARCHITECTURE DIRECTION VS CURRENT PRIORITY" not in text:
+    updated = text.rstrip() + "\n\n" + section_n.strip() + "\n"
+else:
+    updated = text
+
+out = Path("/mnt/data/PROJECT_PROGRESSION_CHECKLIST_v1_0_1.txt")
+out.write_text(updated, encoding="utf-8")
+
+print(f"Created: {out}")
+print(f"Original length: {len(text)} chars")
+print(f"Updated length: {len(updated)} chars")
+print(f"Section N added: {'N) ARCHITECTURE DIRECTION VS CURRENT PRIORITY' in updated}")
