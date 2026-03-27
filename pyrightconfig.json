@@ -1,0 +1,14 @@
+{
+  "include": [
+    "Bot"               // ให้ตรวจเฉพาะโฟลเดอร์ Bot (หรือ src ถ้ามี)
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.*",
+    "**/node_modules",
+    "M1_XAUUSD",             // ข้าม Data เพราะมีข้อมูลเยอะ
+    "venv",
+    ".venv",
+    ".git"
+  ]
+}
