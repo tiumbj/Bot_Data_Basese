@@ -1,8 +1,7 @@
 """
 standardized_result_pack_v1_0_0.py
-Version: v1.0.0
-Purpose:
-    Standardized result writing for Gate 4 runner.
+Version: v1.0.1
+Purpose: Standardized result writing for Gate 4 runner.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
-
 
 RESULT_COLUMNS = [
     "result_key",
@@ -93,7 +91,11 @@ def build_standardized_result(
         "started_at_utc": started_at_utc,
         "finished_at_utc": finished_at_utc,
         "duration_sec": round(float(duration_sec), 6),
-        "metrics_json": json.dumps(executor_result.get("metrics", {}), ensure_ascii=False, sort_keys=True),
+        "metrics_json": json.dumps(
+            executor_result.get("metrics", {}),
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
     }
 
 
@@ -118,15 +120,17 @@ class StandardizedResultPackWriter:
 
     def append_result(self, row: Dict[str, Any]) -> None:
         self.ensure_layout()
+
         with self.results_jsonl.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
         rows = self.read_all_results()
-        rows.append(row)
         self._rewrite_csv(rows)
 
     def read_all_results(self) -> List[Dict[str, Any]]:
         if not self.results_jsonl.exists():
             return []
+
         rows: List[Dict[str, Any]] = []
         with self.results_jsonl.open("r", encoding="utf-8") as f:
             for line in f:
@@ -137,15 +141,20 @@ class StandardizedResultPackWriter:
 
     def write_summaries(self, state: Dict[str, Any], rows: Iterable[Dict[str, Any]]) -> None:
         rows = list(rows)
+
         reject_reason_counts: Dict[str, int] = {}
         error_reason_counts: Dict[str, int] = {}
         missing_feature_counts: Dict[str, int] = {}
 
         for row in rows:
             if row["reject_reason"]:
-                reject_reason_counts[row["reject_reason"]] = reject_reason_counts.get(row["reject_reason"], 0) + 1
+                reject_reason_counts[row["reject_reason"]] = (
+                    reject_reason_counts.get(row["reject_reason"], 0) + 1
+                )
             if row["error_reason"]:
-                error_reason_counts[row["error_reason"]] = error_reason_counts.get(row["error_reason"], 0) + 1
+                error_reason_counts[row["error_reason"]] = (
+                    error_reason_counts.get(row["error_reason"], 0) + 1
+                )
             if row["missing_feature_reason"]:
                 missing_feature_counts[row["missing_feature_reason"]] = (
                     missing_feature_counts.get(row["missing_feature_reason"], 0) + 1
@@ -159,19 +168,34 @@ class StandardizedResultPackWriter:
 
     def _rewrite_csv(self, rows: List[Dict[str, Any]]) -> None:
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(self.results_dir), encoding="utf-8", newline="") as tmp:
+
+        with tempfile.NamedTemporaryFile(
+            "w",
+            delete=False,
+            dir=str(self.results_dir),
+            encoding="utf-8",
+            newline="",
+        ) as tmp:
             writer = csv.DictWriter(tmp, fieldnames=RESULT_COLUMNS)
             writer.writeheader()
             for row in rows:
                 writer.writerow({col: row.get(col, "") for col in RESULT_COLUMNS})
             tmp_path = Path(tmp.name)
+
         atomic_replace(tmp_path, self.results_csv)
 
     @staticmethod
     def _write_json(path: Path, payload: Dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         text = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(path.parent), encoding="utf-8") as tmp:
+
+        with tempfile.NamedTemporaryFile(
+            "w",
+            delete=False,
+            dir=str(path.parent),
+            encoding="utf-8",
+        ) as tmp:
             tmp.write(text)
             tmp_path = Path(tmp.name)
+
         atomic_replace(tmp_path, path)

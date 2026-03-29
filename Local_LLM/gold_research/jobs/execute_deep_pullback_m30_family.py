@@ -1,6 +1,3 @@
-# version: v1.0.3
-# file: C:\Data\Bot\Local_LLM\gold_research\jobs\execute_deep_pullback_m30_family.py
-
 from __future__ import annotations
 
 import csv
@@ -11,8 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 
-VERSION = "v1.0.3"
+
+VERSION = "v1.0.6"
 
 TRADES_JSONL = Path(r"C:\Data\Bot\central_backtest_results\paper_trade_historical\trades.jsonl")
 
@@ -121,7 +120,12 @@ def load_trades() -> list[TradeRow]:
                 exit_time_utc=str(first_present(raw, ["exit_time_utc", "exit_time", "close_time_utc"])),
                 entry_price=entry_price,
                 exit_price=exit_price,
-                side=normalize_side(first_present(raw, ["side", "direction", "trade_side", "position_side"], ""), entry_price, exit_price, exit_reason),
+                side=normalize_side(
+                    first_present(raw, ["side", "direction", "trade_side", "position_side"], ""),
+                    entry_price,
+                    exit_price,
+                    exit_reason,
+                ),
                 exit_reason=exit_reason,
                 trend_bucket=str(first_present(raw, ["trend_bucket"], "")),
                 volatility_bucket=str(first_present(raw, ["volatility_bucket"], "")),
@@ -328,7 +332,7 @@ def normalize_micro_exit_id(micro_exit_id: str) -> str:
     }
     normalized = mapping.get(str(micro_exit_id).strip())
     if normalized is None:
-        raise NotImplementedError(f"Micro exit not implemented in v1.0.3: {micro_exit_id}")
+        raise NotImplementedError(f"Micro exit not implemented in v1.0.6: {micro_exit_id}")
     return normalized
 
 
@@ -342,7 +346,7 @@ def normalize_cooldown_id(cooldown_id: Any) -> str:
         }
         normalized = mapping.get(cooldown_id)
         if normalized is None:
-            raise NotImplementedError(f"Cooldown not implemented in v1.0.3: {cooldown_id}")
+            raise NotImplementedError(f"Cooldown not implemented in v1.0.6: {cooldown_id}")
         return normalized
 
     text = str(cooldown_id).strip()
@@ -361,8 +365,73 @@ def normalize_cooldown_id(cooldown_id: Any) -> str:
     }
     normalized = mapping.get(text)
     if normalized is None:
-        raise NotImplementedError(f"Cooldown not implemented in v1.0.3: {cooldown_id}")
+        raise NotImplementedError(f"Cooldown not implemented in v1.0.6: {cooldown_id}")
     return normalized
+
+
+def normalize_side_policy_id(value: Any) -> str:
+    text = str(value).strip().lower()
+    mapping = {
+        "": "both",
+        "both": "both",
+        "both_sides": "both",
+        "long_only": "long_only",
+        "buy_only": "long_only",
+        "short_only": "short_only",
+        "sell_only": "short_only",
+    }
+    normalized = mapping.get(text)
+    if normalized is None:
+        raise NotImplementedError(f"side_policy not implemented in v1.0.6: {value}")
+    return normalized
+
+
+def normalize_volatility_filter_id(value: Any) -> str:
+    text = str(value).strip().lower()
+    mapping = {
+        "": "any_vol",
+        "any_vol": "any_vol",
+        "off": "any_vol",
+        "none": "any_vol",
+        "low_vol_only": "low_vol_only",
+        "mid_vol_only": "mid_vol_only",
+        "high_vol_only": "high_vol_only",
+        "mid_high_vol": "mid_high_vol",
+    }
+    normalized = mapping.get(text)
+    if normalized is None:
+        raise NotImplementedError(f"volatility_filter not implemented in v1.0.6: {value}")
+    return normalized
+
+
+def normalize_trend_strength_filter_id(value: Any) -> str:
+    text = str(value).strip().lower()
+    mapping = {
+        "": "any_trend",
+        "off": "any_trend",
+        "none": "any_trend",
+        "any_trend": "any_trend",
+        "any_trend_strength": "any_trend",
+        "mid_trend_plus": "mid_trend_plus",
+        "strong_trend_only": "strong_trend_only",
+    }
+    normalized = mapping.get(text)
+    if normalized is None:
+        raise NotImplementedError(f"trend_strength_filter not implemented in v1.0.6: {value}")
+    return normalized
+
+
+def read_job_config_id(job: dict[str, Any], field_name: str, nested_key: str, default: str = "") -> str:
+    raw = job.get(field_name, default)
+
+    if isinstance(raw, dict):
+        value = raw.get(nested_key, default)
+        return str(value).strip()
+
+    if raw is None:
+        return str(default).strip()
+
+    return str(raw).strip()
 
 
 def apply_regime_filter(row: TradeRow, regime_filter_id: str) -> tuple[bool, str]:
@@ -388,6 +457,69 @@ def apply_regime_filter(row: TradeRow, regime_filter_id: str) -> tuple[bool, str
         return False, ""
 
     raise ValueError(f"Unknown regime_filter_id: {regime_filter_id}")
+
+
+def apply_side_policy_filter(row: TradeRow, side_policy_id: str) -> tuple[bool, str]:
+    normalized = normalize_side_policy_id(side_policy_id)
+
+    if normalized == "both":
+        return False, ""
+    if normalized == "long_only":
+        return (row.side != "BUY"), "SIDE_POLICY_LONG_ONLY"
+    if normalized == "short_only":
+        return (row.side != "SELL"), "SIDE_POLICY_SHORT_ONLY"
+
+    raise ValueError(f"Unknown side_policy_id: {side_policy_id}")
+
+
+def apply_volatility_filter(row: TradeRow, volatility_filter_id: str) -> tuple[bool, str]:
+    normalized = normalize_volatility_filter_id(volatility_filter_id)
+    bucket = str(row.volatility_bucket or "").strip().upper()
+
+    if normalized == "any_vol":
+        return False, ""
+
+    if normalized == "low_vol_only":
+        return (bucket != "LOW_VOL"), "VOLATILITY_FILTER_LOW_ONLY"
+
+    if normalized == "mid_vol_only":
+        return (bucket != "MID_VOL"), "VOLATILITY_FILTER_MID_ONLY"
+
+    if normalized == "high_vol_only":
+        return (bucket != "HIGH_VOL"), "VOLATILITY_FILTER_HIGH_ONLY"
+
+    if normalized == "mid_high_vol":
+        return (bucket not in {"MID_VOL", "HIGH_VOL"}), "VOLATILITY_FILTER_MID_HIGH_ONLY"
+
+    raise ValueError(f"Unknown volatility_filter_id: {volatility_filter_id}")
+
+
+def apply_trend_strength_filter(row: TradeRow, trend_strength_filter_id: str) -> tuple[bool, str]:
+    normalized = normalize_trend_strength_filter_id(trend_strength_filter_id)
+    bucket = str(row.trend_bucket or "").strip().upper()
+
+    if normalized == "any_trend":
+        return False, ""
+
+    if normalized == "mid_trend_plus":
+        allowed = {
+            "MID_TREND",
+            "MID_TREND_PLUS",
+            "STRONG_TREND",
+            "BULL_TREND",
+            "BEAR_TREND",
+        }
+        return (bucket not in allowed), "TREND_STRENGTH_FILTER_MID_PLUS"
+
+    if normalized == "strong_trend_only":
+        allowed = {
+            "STRONG_TREND",
+            "BULL_TREND",
+            "BEAR_TREND",
+        }
+        return (bucket not in allowed), "TREND_STRENGTH_FILTER_STRONG_ONLY"
+
+    raise ValueError(f"Unknown trend_strength_filter_id: {trend_strength_filter_id}")
 
 
 def is_fast_invalidation_exit(side: str, prev_bar: OhlcBar, cur_bar: OhlcBar) -> bool:
@@ -419,14 +551,51 @@ def is_momentum_fade_exit(
     return adx_falling and stall and weak_body and weakening
 
 
+def vectorized_fast_invalidation_exit_slice(
+    side: str,
+    closes: np.ndarray,
+    lows: np.ndarray,
+    highs: np.ndarray,
+    bullish_closes: np.ndarray,
+    lower_lows: np.ndarray,
+    bullish_mask: np.ndarray,
+) -> np.ndarray:
+    if side == "BUY":
+        invalidation_a = closes < np.roll(lows, 1)
+        invalidation_a[0] = False
+        invalidation_b = bullish_closes & lower_lows
+        return invalidation_a | invalidation_b
+    return np.zeros(len(closes), dtype=bool)
+
+
+def vectorized_momentum_fade_exit_slice(
+    side: str,
+    adx14: np.ndarray,
+    atr14: np.ndarray,
+    atr_roll5: np.ndarray,
+    body_ratio: np.ndarray,
+    di_plus: np.ndarray,
+    di_minus: np.ndarray,
+) -> np.ndarray:
+    adx_falling = adx14 < np.roll(adx14, 1)
+    adx_falling[0] = False
+    stall = atr14 < atr_roll5
+    weak_body = body_ratio < 0.25
+    if side == "BUY":
+        weakening = di_plus < np.roll(di_plus, 1)
+    else:
+        weakening = di_minus < np.roll(di_minus, 1)
+    weakening[0] = False
+    return adx_falling & stall & weak_body & weakening
+
+
 def build_effective_trade(
     row: TradeRow,
-    micro_exit_id: str,
+    normalized_micro_exit_id: str,
     ts_index: list[datetime],
     bars: list[OhlcBar],
+    atr_roll5: list[float] | None = None,
 ) -> dict[str, Any]:
-    normalized_micro_exit_id = normalize_micro_exit_id(micro_exit_id)
-
     out = {
         "trade_id": row.trade_id,
         "signal_id": row.signal_id,
@@ -451,6 +620,9 @@ def build_effective_trade(
         "cooldown_rule_name": "",
         "regime_blocked": False,
         "blocked_reason": "",
+        "side_policy_blocked": False,
+        "volatility_filter_blocked": False,
+        "trend_strength_filter_blocked": False,
         "native_micro_exit_logic": normalized_micro_exit_id,
     }
 
@@ -489,35 +661,48 @@ def build_effective_trade(
             out["threshold_bar_pnl"] = threshold_pnl
         return out
 
-    atr_roll5 = rolling_mean([bar.atr14 for bar in bars], 5)
+    if atr_roll5 is None:
+        raise ValueError("atr_roll5 precomputed list is required for native micro exits")
 
-    for i in range(max(entry_idx + 1, 1), exit_idx + 1):
-        prev_bar = bars[i - 1]
-        cur_bar = bars[i]
-        triggered = False
-        reason = ""
+    bar_slice = bars[entry_idx + 1:exit_idx + 1]
+    n = len(bar_slice)
+    if n == 0:
+        return out
 
-        if normalized_micro_exit_id == "micro_exit_v2_fast_invalidation":
-            triggered = is_fast_invalidation_exit(row.side, prev_bar, cur_bar)
-            reason = "micro_exit_v2_fast_invalidation"
-        elif normalized_micro_exit_id == "micro_exit_v2_momentum_fade":
-            triggered = is_momentum_fade_exit(row.side, prev_bar, cur_bar, atr_roll5, i)
-            reason = "micro_exit_v2_momentum_fade"
-        else:
-            raise NotImplementedError(f"Micro exit not implemented in v1.0.3: {micro_exit_id}")
+    closes = np.array([b.close for b in bar_slice], dtype=np.float64)
+    highs = np.array([b.high for b in bar_slice], dtype=np.float64)
+    lows = np.array([b.low for b in bar_slice], dtype=np.float64)
+    bullish_closes = np.array([b.bullish_close for b in bar_slice], dtype=np.bool_)
+    lower_lows = np.array([b.lower_low for b in bar_slice], dtype=np.bool_)
+    adx_vals = np.array([b.adx14 for b in bar_slice], dtype=np.float64)
+    atr_vals = np.array([b.atr14 for b in bar_slice], dtype=np.float64)
+    body_ratios = np.array([b.body_ratio for b in bar_slice], dtype=np.float64)
+    di_plus_vals = np.array([b.di_plus for b in bar_slice], dtype=np.float64)
+    di_minus_vals = np.array([b.di_minus for b in bar_slice], dtype=np.float64)
+    atr_roll5_slice = np.array(atr_roll5[entry_idx + 1:exit_idx + 1], dtype=np.float64)
 
-        if not triggered:
-            continue
+    if normalized_micro_exit_id == "micro_exit_v2_fast_invalidation":
+        trigger_flags = vectorized_fast_invalidation_exit_slice(
+            row.side, closes, lows, highs, bullish_closes, lower_lows, None
+        )
+    elif normalized_micro_exit_id == "micro_exit_v2_momentum_fade":
+        trigger_flags = vectorized_momentum_fade_exit_slice(
+            row.side, adx_vals, atr_vals, atr_roll5_slice, body_ratios, di_plus_vals, di_minus_vals
+        )
+    else:
+        raise NotImplementedError(f"Micro exit not implemented in v1.0.6: {normalized_micro_exit_id}")
 
+    if trigger_flags.any():
+        first_trigger_idx = int(np.argmax(trigger_flags))
+        trigger_bar = bar_slice[first_trigger_idx]
         if row.side == "BUY":
-            effective_pnl = cur_bar.close - row.entry_price
+            effective_pnl = trigger_bar.close - row.entry_price
         else:
-            effective_pnl = row.entry_price - cur_bar.close
-
-        out["effective_exit_time_utc"] = cur_bar.ts_utc
-        out["effective_exit_price"] = cur_bar.close
+            effective_pnl = row.entry_price - trigger_bar.close
+        out["effective_exit_time_utc"] = trigger_bar.ts_utc
+        out["effective_exit_price"] = trigger_bar.close
         out["effective_pnl"] = effective_pnl
-        out["effective_exit_reason"] = reason
+        out["effective_exit_reason"] = normalized_micro_exit_id
         return out
 
     return out
@@ -536,7 +721,7 @@ def apply_cooldown(rows: list[dict[str, Any]], cooldown_id: Any) -> list[dict[st
         loss_threshold = 3
         rule_name = "cooldown_after_3_losses_skip_1"
     else:
-        raise NotImplementedError(f"Cooldown not implemented in v1.0.3: {cooldown_id}")
+        raise NotImplementedError(f"Cooldown not implemented in v1.0.6: {cooldown_id}")
 
     out: list[dict[str, Any]] = []
     consecutive_losses = 0
@@ -591,7 +776,13 @@ def max_consecutive_losses(rows: list[dict[str, Any]]) -> int:
     return max_loss_streak
 
 
-def summarize(job: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize(
+    job: dict[str, Any],
+    rows: list[dict[str, Any]],
+    side_policy_id: str,
+    volatility_filter_id: str,
+    trend_strength_filter_id: str,
+) -> dict[str, Any]:
     active_rows = [r for r in rows if r.get("included_in_variant", True)]
     trades = len(active_rows)
     wins = sum(1 for r in active_rows if float(r.get("effective_pnl", 0.0)) > 0)
@@ -616,6 +807,9 @@ def summarize(job: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]
         "micro_exit": job["micro_exit"],
         "cooldown": job["cooldown"],
         "regime_filter": job["regime_filter"],
+        "side_policy": {"side_policy_id": side_policy_id},
+        "volatility_filter": {"volatility_filter_id": volatility_filter_id},
+        "trend_strength_filter": {"trend_strength_filter_id": trend_strength_filter_id},
         "metrics": {
             "pnl_sum": pnl_sum,
             "payoff_ratio": payoff_ratio,
@@ -636,14 +830,19 @@ def summarize(job: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]
             ),
             "cooldown_skipped_count": sum(1 for r in rows if r.get("cooldown_skipped_signal", False)),
             "regime_blocked_count": sum(1 for r in rows if r.get("regime_blocked", False)),
+            "side_policy_blocked_count": sum(1 for r in rows if r.get("side_policy_blocked", False)),
+            "volatility_filter_blocked_count": sum(1 for r in rows if r.get("volatility_filter_blocked", False)),
+            "trend_strength_filter_blocked_count": sum(1 for r in rows if r.get("trend_strength_filter_blocked", False)),
         },
         "notes": [
-            "v1.0.3 loads OHLC from job['dataset']['ohlc_csv'] for multi-timeframe execution",
-            "v1.0.3 uses native logic for micro_exit_v2_fast_invalidation",
-            "v1.0.3 uses native logic for micro_exit_v2_momentum_fade",
+            "v1.0.6 preserves v1.0.4 atr_roll5 precompute optimization",
+            "v1.0.6 accepts side_policy/volatility_filter/trend_strength_filter as either string or dict",
+            "v1.0.6 now applies side_policy from job manifest",
+            "v1.0.6 now applies volatility_filter from job manifest using trades.jsonl volatility_bucket",
+            "v1.0.6 now applies trend_strength_filter from job manifest using trades.jsonl trend_bucket",
+            "v1.0.6 keeps regime_filter, cooldown, and micro_exit output schema compatible",
             "micro_exit_v2_structure_trail is still temporarily normalized to conditional_max_hold_6h",
             "cooldown_bars=6 is still temporarily normalized to cooldown_3L_skip1",
-            "trend/volatility/price_location buckets still come from trades.jsonl baseline stream",
         ],
     }
 
@@ -663,27 +862,96 @@ def execute_deep_pullback_m30_family_job(job: dict[str, Any]) -> dict[str, Any]:
 
     trades = load_trades()
     ts_index, bars = load_ohlc_from_csv(Path(str(ohlc_csv_raw)))
+    atr_roll5 = rolling_mean([bar.atr14 for bar in bars], 5)
 
-    regime_filter_id = job["regime_filter"]["regime_filter_id"]
-    micro_exit_id = job["micro_exit"]["exit_id"]
-    cooldown_id = job["cooldown"]["cooldown_id"]
+    regime_filter_id = read_job_config_id(job, "regime_filter", "regime_filter_id", "regime_filter_off")
+    micro_exit_id = read_job_config_id(job, "micro_exit", "exit_id", "none")
+    cooldown_id = read_job_config_id(job, "cooldown", "cooldown_id", "none")
+    side_policy_id = read_job_config_id(job, "side_policy", "side_policy_id", "both")
+    volatility_filter_id = read_job_config_id(job, "volatility_filter", "volatility_filter_id", "any_vol")
+    trend_strength_filter_id = read_job_config_id(job, "trend_strength_filter", "trend_strength_filter_id", "any_trend")
+
+    normalized_micro_exit_id = normalize_micro_exit_id(micro_exit_id)
 
     processed: list[dict[str, Any]] = []
     for row in trades:
-        blocked, blocked_reason = apply_regime_filter(row, regime_filter_id)
-        if blocked:
-            item = build_effective_trade(row, "none", ts_index, bars)
+        side_blocked, side_reason = apply_side_policy_filter(row, side_policy_id)
+        if side_blocked:
+            item = build_effective_trade(
+                row=row,
+                normalized_micro_exit_id="none",
+                ts_index=ts_index,
+                bars=bars,
+                atr_roll5=None,
+            )
             item["included_in_variant"] = False
-            item["regime_blocked"] = True
-            item["blocked_reason"] = blocked_reason
+            item["side_policy_blocked"] = True
+            item["blocked_reason"] = side_reason
             processed.append(item)
             continue
 
-        item = build_effective_trade(row, micro_exit_id, ts_index, bars)
+        vol_blocked, vol_reason = apply_volatility_filter(row, volatility_filter_id)
+        if vol_blocked:
+            item = build_effective_trade(
+                row=row,
+                normalized_micro_exit_id="none",
+                ts_index=ts_index,
+                bars=bars,
+                atr_roll5=None,
+            )
+            item["included_in_variant"] = False
+            item["volatility_filter_blocked"] = True
+            item["blocked_reason"] = vol_reason
+            processed.append(item)
+            continue
+
+        trend_blocked, trend_reason = apply_trend_strength_filter(row, trend_strength_filter_id)
+        if trend_blocked:
+            item = build_effective_trade(
+                row=row,
+                normalized_micro_exit_id="none",
+                ts_index=ts_index,
+                bars=bars,
+                atr_roll5=None,
+            )
+            item["included_in_variant"] = False
+            item["trend_strength_filter_blocked"] = True
+            item["blocked_reason"] = trend_reason
+            processed.append(item)
+            continue
+
+        regime_blocked, regime_reason = apply_regime_filter(row, regime_filter_id)
+        if regime_blocked:
+            item = build_effective_trade(
+                row=row,
+                normalized_micro_exit_id="none",
+                ts_index=ts_index,
+                bars=bars,
+                atr_roll5=None,
+            )
+            item["included_in_variant"] = False
+            item["regime_blocked"] = True
+            item["blocked_reason"] = regime_reason
+            processed.append(item)
+            continue
+
+        item = build_effective_trade(
+            row=row,
+            normalized_micro_exit_id=normalized_micro_exit_id,
+            ts_index=ts_index,
+            bars=bars,
+            atr_roll5=atr_roll5,
+        )
         processed.append(item)
 
     final_rows = apply_cooldown(processed, cooldown_id)
-    summary = summarize(job, final_rows)
+    summary = summarize(
+        job=job,
+        rows=final_rows,
+        side_policy_id=side_policy_id,
+        volatility_filter_id=volatility_filter_id,
+        trend_strength_filter_id=trend_strength_filter_id,
+    )
 
     result_dir = Path(job["artifact_paths"]["job_result_dir"])
     result_dir.mkdir(parents=True, exist_ok=True)
